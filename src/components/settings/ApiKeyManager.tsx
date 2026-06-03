@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, EyeOff, Check, X, Loader2, Key } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +12,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { getOpenRouterClient } from '@/services/openrouter'
+import { clearOpenRouterClient, getOpenRouterClient } from '@/services/openrouter'
+import { clearStoredApiKey, loadStoredApiKey, saveStoredApiKey } from '@/services/secureApiKey'
 import { useToast } from '@/components/ui/use-toast'
 
 export function ApiKeyManager() {
@@ -24,8 +25,37 @@ export function ApiKeyManager() {
   const [open, setOpen] = useState(false)
   const { toast } = useToast()
 
+  useEffect(() => {
+    let active = true
+
+    void loadStoredApiKey()
+      .then((storedKey) => {
+        if (!active || !storedKey) return
+        if (!useSettingsStore.getState().apiKey) {
+          setApiKey(storedKey)
+          setInputKey(storedKey)
+        }
+      })
+      .catch((error) => {
+        toast({
+          title: 'API Key Unavailable',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Failed to read the API key from the OS credential store',
+          variant: 'destructive',
+        })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [setApiKey, toast])
+
   const handleValidateAndSave = async () => {
-    if (!inputKey.trim()) {
+    const trimmedKey = inputKey.trim()
+
+    if (!trimmedKey) {
       toast({
         title: 'Error',
         description: 'Please enter an API key',
@@ -38,11 +68,12 @@ export function ApiKeyManager() {
     setIsValid(null)
 
     try {
-      const client = getOpenRouterClient(inputKey.trim())
+      const client = getOpenRouterClient(trimmedKey)
       const valid = await client.validateApiKey()
 
       if (valid) {
-        setApiKey(inputKey.trim())
+        await saveStoredApiKey(trimmedKey)
+        setApiKey(trimmedKey)
         setIsValid(true)
         toast({
           title: 'Success',
@@ -69,14 +100,25 @@ export function ApiKeyManager() {
     }
   }
 
-  const handleClear = () => {
-    clearApiKey()
-    setInputKey('')
-    setIsValid(null)
-    toast({
-      title: 'API Key Cleared',
-      description: 'Your API key has been removed',
-    })
+  const handleClear = async () => {
+    try {
+      await clearStoredApiKey()
+      clearOpenRouterClient()
+      clearApiKey()
+      setInputKey('')
+      setIsValid(null)
+      toast({
+        title: 'API Key Cleared',
+        description: 'Your API key has been removed',
+      })
+    } catch (error) {
+      toast({
+        title: 'Clear Failed',
+        description:
+          error instanceof Error ? error.message : 'Failed to remove the API key from storage',
+        variant: 'destructive',
+      })
+    }
   }
 
   const maskedKey = apiKey ? `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}` : ''
@@ -93,7 +135,7 @@ export function ApiKeyManager() {
         <DialogHeader>
           <DialogTitle>OpenRouter API Key</DialogTitle>
           <DialogDescription>
-            Enter your OpenRouter API key to enable model access. Your key is stored locally and never sent to our servers.
+            Enter your OpenRouter API key to enable model access. In the desktop app, your key is stored in the OS credential store.
           </DialogDescription>
         </DialogHeader>
 

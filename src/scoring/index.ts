@@ -51,7 +51,10 @@ function scoreBooleanMatch(response: string, expected: string): ScoringResult {
   if (!expected) {
     return {
       score: 1,
+      confidence: 1,
       notes: 'No expected output - auto pass',
+      rawScore: 100,
+      maxScore: 100,
     }
   }
 
@@ -63,9 +66,12 @@ function scoreBooleanMatch(response: string, expected: string): ScoringResult {
 
   return {
     score: contains ? 1 : 0,
+    confidence: 1,
     notes: contains
       ? 'Expected output found in response'
       : 'Expected output not found in response',
+    rawScore: contains ? 100 : 0,
+    maxScore: 100,
   }
 }
 

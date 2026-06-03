@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Play, Square, Repeat, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useModelStore } from '@/stores/modelStore'
 import { useRunStore } from '@/stores/runStore'
 import { executeRun } from '@/services/execution'
+import { estimateStandardRunCost, formatCost, isOverBudget } from '@/services/costControls'
 import type { TestSuite } from '@/types'
 
 interface ExecutionControlsProps {
@@ -19,8 +20,8 @@ interface ExecutionControlsProps {
 }
 
 export function ExecutionControls({ testSuite }: ExecutionControlsProps) {
-  const { apiKey } = useSettingsStore()
-  const { selectedModelIds, parameters, judgeModelId } = useModelStore()
+  const { apiKey, maxRunCostUsd, concurrencyLimit } = useSettingsStore()
+  const { selectedModelIds, judgeModelId, availableModels, getEffectiveParameters } = useModelStore()
   const { createRun } = useRunStore()
   const { toast } = useToast()
 
@@ -29,29 +30,61 @@ export function ExecutionControls({ testSuite }: ExecutionControlsProps) {
   const [currentRunIndex, setCurrentRunIndex] = useState(0)
   const [totalRuns, setTotalRuns] = useState(1)
 
-  const canRun = selectedModelIds.length > 0 && testSuite.testCases.length > 0
+  const effectiveParameters = getEffectiveParameters()
+  const estimatedOneRunCost = useMemo(
+    () =>
+      estimateStandardRunCost({
+        testSuite,
+        modelIds: selectedModelIds,
+        availableModels,
+        parameters: effectiveParameters,
+        judgeModelId,
+      }),
+    [availableModels, effectiveParameters, judgeModelId, selectedModelIds, testSuite]
+  )
+  const oneRunOverBudget = isOverBudget(estimatedOneRunCost, maxRunCostUsd)
+  const hasRunInputs = selectedModelIds.length > 0 && testSuite.testCases.length > 0
+  const canRun = hasRunInputs && !oneRunOverBudget
 
   const executeSingleRun = async (controller: AbortController): Promise<string> => {
     const run = createRun({
       testSuiteId: testSuite.id,
       testSuiteName: testSuite.name,
       models: selectedModelIds,
-      parameters,
+      parameters: effectiveParameters,
       results: [],
       status: 'running',
       startedAt: Date.now(),
       judgeModel: judgeModelId || undefined,
     })
 
-    await executeRun(run.id, testSuite, apiKey!, controller.signal)
+    await executeRun(run.id, testSuite, apiKey!, controller.signal, { concurrencyLimit })
     return run.id
   }
 
   const handleRun = async (numRuns: number = 1) => {
-    if (!canRun || !apiKey) {
+    if (!hasRunInputs || !apiKey) {
       toast({
         title: 'Cannot start run',
         description: 'Please select at least one model and ensure test cases exist',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const estimatedCost = estimateStandardRunCost({
+      testSuite,
+      modelIds: selectedModelIds,
+      availableModels,
+      parameters: effectiveParameters,
+      runCount: numRuns,
+      judgeModelId,
+    })
+
+    if (isOverBudget(estimatedCost, maxRunCostUsd)) {
+      toast({
+        title: 'Run blocked by cost cap',
+        description: `Estimated ${formatCost(estimatedCost)} exceeds your ${formatCost(maxRunCostUsd)} cap.`,
         variant: 'destructive',
       })
       return
@@ -163,6 +196,12 @@ export function ExecutionControls({ testSuite }: ExecutionControlsProps) {
       {selectedModelIds.length === 0 && (
         <span className="text-sm text-muted-foreground">
           Select models to run
+        </span>
+      )}
+      {selectedModelIds.length > 0 && (
+        <span className={oneRunOverBudget ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
+          Est. {formatCost(estimatedOneRunCost)}
+          {maxRunCostUsd > 0 && ` / cap ${formatCost(maxRunCostUsd)}`}
         </span>
       )}
     </div>

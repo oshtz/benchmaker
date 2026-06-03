@@ -1,5 +1,7 @@
 # Code Arena Implementation Plan
 
+Status: implemented. This file is retained as the historical implementation plan; the current persisted schema, cost controls, and tests are documented in `README.md` and `TESTING_METHODOLOGY.md`.
+
 ## Overview
 
 Add a new "Code Arena" benchmark type to Benchmaker that enables real-time side-by-side comparison of different AI models generating frontend code (HTML+CSS+JS) with live preview rendering.

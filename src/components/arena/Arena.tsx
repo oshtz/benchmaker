@@ -9,6 +9,7 @@ import { ModelSelector } from './ModelSelector'
 import { ParameterPanel } from './ParameterPanel'
 import { ExecutionControls } from './ExecutionControls'
 import { JudgeSelector } from './JudgeSelector'
+import { ExecutionSafetyPanel } from './ExecutionSafetyPanel'
 
 export function Arena() {
   const { apiKey } = useSettingsStore()
@@ -153,6 +154,7 @@ export function Arena() {
         </div>
         <div className="md:col-span-2 xl:col-span-1 grid gap-4 sm:gap-6 md:grid-cols-2 xl:grid-cols-1 min-h-0">
           <ParameterPanel />
+          <ExecutionSafetyPanel />
           <JudgeSelector />
         </div>
       </div>
