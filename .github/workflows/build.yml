@@ -14,12 +14,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Setup Rust
@@ -37,7 +37,7 @@ jobs:
         run: npm run tauri:build -- --bundles none
 
       - name: Cache Enigma Virtual Box installer
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}\enigmavb_setup.exe
           key: enigma-virtual-box-installer-v1
@@ -148,7 +148,11 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            Write-Warning "Windows signing secrets are not configured; portable exe will remain unsigned."
+            $message = "Windows signing secrets are not configured; portable exe will remain unsigned."
+            if ($env:GITHUB_REF -eq "refs/heads/main") {
+              throw $message
+            }
+            Write-Warning $message
             exit 0
           }
 
@@ -160,6 +164,21 @@ jobs:
             throw "signtool failed with exit code $LASTEXITCODE"
           }
 
+      - name: Verify portable signature
+        shell: pwsh
+        run: |
+          $asset = Resolve-Path "src-tauri\target\release\Benchmaker-Portable.exe"
+          $signature = Get-AuthenticodeSignature $asset
+          if ($signature.Status -ne "Valid") {
+            $message = "Portable exe Authenticode status: $($signature.Status)"
+            if ($env:GITHUB_REF -eq "refs/heads/main") {
+              throw $message
+            }
+            Write-Warning $message
+            exit 0
+          }
+          Write-Host "Portable exe signature is valid: $($signature.SignerCertificate.Subject)"
+
       - name: Generate portable checksum
         shell: pwsh
         run: |
@@ -168,7 +187,7 @@ jobs:
           "$hash  Benchmaker-Portable.exe" | Set-Content -NoNewline "$asset.sha256"
 
       - name: Upload portable exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Benchmaker-Portable
           path: |
@@ -190,7 +209,7 @@ jobs:
       - name: Check for existing release
         id: release_check
         if: github.ref == 'refs/heads/main'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const tag = '${{ steps.release_tag.outputs.tag }}';
@@ -207,7 +226,7 @@ jobs:
 
       - name: Create GitHub release
         if: github.ref == 'refs/heads/main' && steps.release_check.outputs.exists != 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           target_commitish: ${{ github.sha }}
@@ -222,12 +241,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Setup Rust
@@ -287,12 +306,6 @@ jobs:
           RUST_BACKTRACE: 1
         run: npm run tauri:build -- --bundles app,dmg
 
-      - name: Upload dmg
-        uses: actions/upload-artifact@v4
-        with:
-          name: Benchmaker-macOS-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
-
       - name: Determine release tag
         id: release_tag
         if: github.ref == 'refs/heads/main'
@@ -306,7 +319,6 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Create app.zip for auto-update
-        if: github.ref == 'refs/heads/main'
         run: |
           cd src-tauri/target/release/bundle/macos
           # Use ditto to create zip (preserves code signature and attributes)
@@ -315,16 +327,31 @@ jobs:
           echo "Created Benchmaker.app.zip for auto-update"
 
       - name: Generate macOS checksums
-        if: github.ref == 'refs/heads/main'
         run: |
           for asset in src-tauri/target/release/bundle/dmg/*.dmg src-tauri/target/release/bundle/macos/Benchmaker.app.zip; do
             hash=$(shasum -a 256 "$asset" | awk '{print $1}')
             printf "%s  %s" "$hash" "$(basename "$asset")" > "$asset.sha256"
           done
 
+      - name: Upload dmg
+        uses: actions/upload-artifact@v6
+        with:
+          name: Benchmaker-macOS-dmg
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/dmg/*.dmg.sha256
+
+      - name: Upload app.zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: Benchmaker-macOS-app-zip
+          path: |
+            src-tauri/target/release/bundle/macos/Benchmaker.app.zip
+            src-tauri/target/release/bundle/macos/Benchmaker.app.zip.sha256
+
       - name: Upload dmg to GitHub release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           files: |
@@ -333,7 +360,7 @@ jobs:
 
       - name: Upload app.zip to GitHub release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           files: |

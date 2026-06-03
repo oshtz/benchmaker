@@ -4,7 +4,7 @@ This runbook covers the production release checks that are not fully provable fr
 
 ## Required Secrets
 
-Windows optional signing:
+Windows release signing:
 
 - `WINDOWS_CERTIFICATE`: base64-encoded `.pfx` certificate.
 - `WINDOWS_CERTIFICATE_PASSWORD`: password for the `.pfx`.
@@ -59,21 +59,22 @@ cargo test --manifest-path src-tauri/Cargo.toml openrouter_minimal_completion_sm
 ## Windows Release
 
 1. Confirm `package.json` and `src-tauri/tauri.conf.json` versions match.
-2. Push to `main` or run the Build Windows workflow manually.
-3. Confirm the workflow creates:
+2. Run the Build Windows workflow manually on `dev` before promotion. Dev builds may continue unsigned so the rest of the pipeline can be exercised.
+3. Push to `main` only after the dev build passes and Windows signing secrets are present.
+4. Confirm the workflow creates:
    - `Benchmaker-Portable.exe`
    - `Benchmaker-Portable.exe.sha256`
-4. If signing secrets are configured, download the artifact and verify:
+5. Download the artifact and verify the signature and checksum:
 
 ```powershell
 Get-AuthenticodeSignature .\Benchmaker-Portable.exe
 Get-FileHash -Algorithm SHA256 .\Benchmaker-Portable.exe
 ```
 
-5. Launch the portable executable on a clean Windows profile.
-6. Save and clear an OpenRouter API key in the header dialog.
-7. Run a tiny benchmark with a strict positive cost cap, then with a cap that allows the run.
-8. Confirm SQLite data persists after restart.
+6. Launch the portable executable on a clean Windows profile.
+7. Save and clear an OpenRouter API key in the header dialog.
+8. Run a tiny benchmark with a strict positive cost cap, then with a cap that allows the run.
+9. Confirm SQLite data persists after restart.
 
 ## macOS Release
 
@@ -119,5 +120,6 @@ If an updater smoke fails:
 ## Known Manual Gates
 
 - Windows SmartScreen reputation cannot be fully cleared by CI.
+- The `main` release workflow fails if Windows signing secrets are missing or the portable signature is not valid.
 - macOS notarization must be checked on real hardware or a clean VM.
 - Real OpenRouter runs require a valid user key and may incur small API costs.
