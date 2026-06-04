@@ -4,7 +4,7 @@ This runbook covers the production release checks that are not fully provable fr
 
 ## Required Secrets
 
-Windows release signing:
+Windows optional signing:
 
 - `WINDOWS_CERTIFICATE`: base64-encoded `.pfx` certificate.
 - `WINDOWS_CERTIFICATE_PASSWORD`: password for the `.pfx`.
@@ -60,11 +60,11 @@ cargo test --manifest-path src-tauri/Cargo.toml openrouter_minimal_completion_sm
 
 1. Confirm `package.json` and `src-tauri/tauri.conf.json` versions match.
 2. Run the Build Windows workflow manually on `dev` before promotion. Dev builds may continue unsigned so the rest of the pipeline can be exercised.
-3. Push to `main` only after the dev build passes and Windows signing secrets are present.
+3. Push to `main` after the dev build passes. If Windows signing secrets are absent, the portable executable will be published unsigned with an Actions warning.
 4. Confirm the workflow creates:
    - `Benchmaker-Portable.exe`
    - `Benchmaker-Portable.exe.sha256`
-5. Download the artifact and verify the signature and checksum:
+5. Download the artifact and verify the signature status and checksum. `NotSigned` is acceptable for unsigned releases, but should be called out in release notes:
 
 ```powershell
 Get-AuthenticodeSignature .\Benchmaker-Portable.exe
@@ -120,6 +120,6 @@ If an updater smoke fails:
 ## Known Manual Gates
 
 - Windows SmartScreen reputation cannot be fully cleared by CI.
-- The `main` release workflow fails if Windows signing secrets are missing or the portable signature is not valid.
+- Unsigned Windows portable releases show `Unknown Publisher` and may trigger SmartScreen or enterprise policy warnings.
 - macOS notarization must be checked on real hardware or a clean VM.
 - Real OpenRouter runs require a valid user key and may incur small API costs.

@@ -149,9 +149,6 @@ jobs:
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
             $message = "Windows signing secrets are not configured; portable exe will remain unsigned."
-            if ($env:GITHUB_REF -eq "refs/heads/main") {
-              throw $message
-            }
             Write-Warning $message
             exit 0
           }
@@ -171,9 +168,6 @@ jobs:
           $signature = Get-AuthenticodeSignature $asset
           if ($signature.Status -ne "Valid") {
             $message = "Portable exe Authenticode status: $($signature.Status)"
-            if ($env:GITHUB_REF -eq "refs/heads/main") {
-              throw $message
-            }
             Write-Warning $message
             exit 0
           }
