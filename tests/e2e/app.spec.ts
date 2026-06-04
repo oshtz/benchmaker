@@ -19,3 +19,17 @@ test('opens update status dialog and degrades cleanly outside Tauri', async ({ p
   await expect(page.getByText('Updates are disabled in this build.')).toBeVisible()
   await expect(page.getByText('Updates are only available in the desktop app.')).toBeVisible()
 })
+
+test('loads prompt editors without Monaco CDN access', async ({ page }) => {
+  await page.route('https://cdn.jsdelivr.net/**', (route) => route.abort())
+  await page.goto('/')
+
+  await page.getByRole('button', { name: /Create manually/i }).click()
+  await page.getByLabel(/Name/i).fill('Prompt editor smoke')
+  await page.getByRole('button', { name: /^Create Suite$/i }).click()
+
+  await expect(page.getByRole('heading', { name: 'System Prompt', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Judge System Prompt', exact: true })).toBeVisible()
+  await expect(page.locator('.monaco-editor').first()).toBeVisible()
+  await expect(page.getByText('Loading...')).toHaveCount(0)
+})
