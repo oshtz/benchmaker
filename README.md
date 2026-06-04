@@ -1,271 +1,125 @@
-<table>
-  <tr>
-    <td><img src="app-white.png" alt="Benchmaker" width="150" /></td>
-    <td>
-      <h1>Benchmaker</h1>
-      <p>A modular, visual LLM benchmarking desktop application for scientifically comparing multiple Large Language Models under identical conditions.</p>
-    </td>
-  </tr>
-</table>
+# Benchmaker
 
-## Overview
+Benchmaker is a desktop app for comparing LLMs under the same prompts, parameters, and scoring rules. It runs on React, TypeScript, and Tauri 1.x, with OpenRouter as the model API.
 
-Benchmaker enables AI researchers, prompt engineers, and technical teams to:
+## What It Does
 
-- **Define standardized test suites** with system prompts and test cases
-- **Select and compare multiple LLMs** via the OpenRouter API
-- **Execute benchmarks in parallel** across all selected models
-- **Score results** using objective rules and/or LLM judge models
-- **Persist and compare results** for regression testing and historical analysis
-- **Analyze performance trends** with comprehensive analytics dashboard
-
-## Features
-
-### Core Benchmarking
-- **Multi-model parallel execution** - Run the same prompts against multiple LLMs simultaneously
-- **Real-time response streaming** - Watch responses as they're generated
-- **Configurable inference parameters** - Temperature, top_p, max_tokens per run
-
-### Scoring System
-- **Exact match** - Precise string comparison
-- **Regex match** - Pattern-based validation
-- **Numeric tolerance** - Numerical comparison with configurable tolerance
-- **Boolean match** - Contains-based validation
-- **LLM-as-Judge** - AI-powered evaluation with customizable judge prompts
-
-### AI-Assisted Tools
-- **Benchmark Generator** - AI-powered generation of complete test suites from descriptions
-- **Test Case Generator** - Automatically generate test cases based on system prompts
-- **Prompt Enhancer** - AI-assisted improvement of system and judge prompts
-
-### Analytics Dashboard
-- **Model Leaderboard** - Ranked performance comparison across all runs
-- **Performance Trends** - Track model improvements over time
-- **Interesting Facts** - AI-generated insights about benchmark results
-- **Per-suite filtering** - Analyze results by specific test suite
-
-### Data Management
-- **SQLite persistence** - Local database for test suites and run history
-- **Data Vault** - Inspect and patch live JSON store directly
-- **Import/Export** - Reproducible benchmark configurations
-
-### User Experience
-- **Monaco editor integration** - Rich code editor for prompt authoring
-- **Custom Tauri window** - Native desktop experience with custom title bar
-- **Auto-updates** - Checks GitHub releases on startup and installs new versions
-- **Dark/Light mode** - Theme support for comfortable usage
+- Build reusable benchmark suites with system prompts, test cases, weights, and scoring methods.
+- Compare multiple OpenRouter models in parallel with streaming responses.
+- Score outputs with exact match, regex, numeric tolerance, boolean contains, LLM judge, and Code Arena judge flows.
+- Run a Code Arena workflow for side-by-side frontend code generation with live previews.
+- Persist suites, standard benchmark runs, Code Arena runs, execution metadata, token counts, and costs in local SQLite.
+- Estimate run cost before execution, enforce an optional max-run cost cap, and configure request concurrency.
+- Store the OpenRouter API key in the OS credential store in the desktop app.
+- Check GitHub Releases for signed/checksummed update assets.
 
 ## Tech Stack
 
-**Frontend:**
-- React 19 + TypeScript
-- Vite 7 build system
-- Tailwind CSS 4
-- Zustand state management
-- Radix UI primitives (custom-styled)
-- Monaco Editor
-- Lucide React icons
+- React 19, TypeScript, Vite 7
+- Tailwind CSS 4, Radix UI, Lucide icons, Monaco Editor
+- Zustand state stores
+- Tauri 1.x Rust backend
+- SQLite via `rusqlite`
+- OpenRouter API
 
-**Backend:**
-- Tauri (Rust)
-- SQLite (rusqlite)
-- Serde serialization
+## Requirements
 
-**External APIs:**
-- OpenRouter (LLM access)
+- Node.js 20 is recommended
+- Rust stable
+- npm
+- OpenRouter API key
 
-## Prerequisites
+## Install And Run
 
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [pnpm](https://pnpm.io/) or npm
-- An [OpenRouter API key](https://openrouter.ai/)
-
-## Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/oshtz/Benchmaker.git
-   cd benchmaker
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Run in development mode:**
-   ```bash
-   npm run tauri dev
-   ```
-
-4. **Build for production:**
-   ```bash
-   npm run tauri build
-   ```
-
-## Project Structure
-
-```
-benchmaker/
-├── src/                          # React frontend
-│   ├── components/
-│   │   ├── arena/                # Test execution controls
-│   │   ├── analytics/            # Analytics dashboard
-│   │   ├── prompt-manager/       # Test suite creation & AI tools
-│   │   ├── results/              # Results and reporting
-│   │   ├── data/                 # Data management (Data Vault)
-│   │   ├── settings/             # Settings UI
-│   │   ├── layout/               # App layout components
-│   │   └── ui/                   # Reusable UI primitives
-│   ├── services/                 # Business logic
-│   │   ├── analytics.ts          # Analytics computation
-│   │   ├── benchmarkGenerator.ts # AI benchmark generation
-│   │   ├── execution.ts          # Benchmark execution
-│   │   ├── localDb.ts            # SQLite operations
-│   │   ├── openrouter.ts         # OpenRouter API client
-│   │   ├── promptEnhancer.ts     # AI prompt enhancement
-│   │   ├── testCaseGenerator.ts  # AI test case generation
-│   │   └── updater.ts            # Auto-update service
-│   ├── stores/                   # Zustand state stores
-│   │   ├── modelStore.ts         # Model selection state
-│   │   ├── runStore.ts           # Benchmark run state
-│   │   ├── settingsStore.ts      # App settings
-│   │   ├── testSuiteStore.ts     # Test suite state
-│   │   └── updateStore.ts        # Update status state
-│   ├── scoring/                  # Scoring implementations
-│   │   ├── exact-match.ts
-│   │   ├── regex-match.ts
-│   │   ├── numeric-tolerance.ts
-│   │   └── llm-judge.ts
-│   ├── types/                    # TypeScript definitions
-│   └── lib/                      # Utilities
-├── src-tauri/                    # Rust backend
-│   ├── src/main.rs               # Tauri app + SQLite
-│   └── tauri.conf.json           # Tauri configuration
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
+```bash
+npm install
+npm run tauri dev
 ```
 
-## Usage
+Build the desktop app:
 
-### 1. Configure API Key
-Enter your OpenRouter API key in the Settings (gear icon in header).
+```bash
+npm run tauri build
+```
 
-### 2. Create a Test Suite
-- Navigate to the **Prompts** tab
-- Define a system prompt that applies to all test cases
-- Add individual test cases with prompts and expected outputs
-- Configure scoring methods per test case (exact-match, regex, numeric, boolean, or llm-judge)
-- Optionally use **AI tools** to generate test cases or enhance prompts
+Run the browser-only Vite app for frontend development:
 
-### 3. Select Models
-- Go to the **Arena** tab
-- Select one or more LLMs from the model list
-- Configure inference parameters (temperature, top_p, max_tokens)
-- Optionally select a judge model for LLM-based scoring
+```bash
+npm run dev
+```
 
-### 4. Run Benchmark
-- Click **Run** to execute all test cases against selected models
-- Watch real-time streaming responses
-- View progress and status per model
+## Verification
 
-### 5. Analyze Results
-- Switch to the **Results** tab for detailed response comparison
-- Use the **Analytics** tab for:
-  - Model leaderboard rankings
-  - Performance trends over time
-  - AI-generated insights and interesting facts
-- Results are automatically saved for future reference
+```bash
+npm run typecheck
+npm test
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run build
+npm run test:e2e
+npm audit --audit-level=moderate
+```
 
-### 6. Manage Data
-- Use the **Data** tab to inspect the live JSON store
-- Patch data directly for reproducible runs
-- Export/import benchmark configurations
+`npm run check` runs TypeScript, Vitest, and Rust tests. The Playwright smoke test uses Vite preview on port `4273` by default; override it with `PLAYWRIGHT_PORT` if needed.
 
-### Updates
-- The app checks for updates on startup
-- Click the version button in the header (e.g. `v0.1.4`) to view update status, release notes, or manually re-check
-- Updates are pulled from GitHub Releases and expect a `Benchmaker-Portable.exe` asset on the latest tag
+## Data And Security
 
-## Development
+- App data is stored locally in a Tauri app-data SQLite database.
+- The normalized database schema is versioned in `src-tauri/src/main.rs`.
+- Snapshot import/export remains available through the Data tab for inspection and repair.
+- OpenRouter keys are not written into the app snapshot or the persisted Zustand settings store. In Tauri builds they are stored through the OS credential store.
+- In browser-only development, API keys are held in memory for the session.
 
-### Scripts
+## Cost Controls
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server only |
-| `npm run build` | Build frontend for production |
-| `npm run tauri dev` | Run full Tauri development build |
-| `npm run tauri build` | Build production desktop app |
+The Arena and Code Arena both expose:
 
-### Release Notes
-- Version is sourced from `package.json` and `src-tauri/tauri.conf.json`
-- GitHub releases should be tagged as `vX.Y.Z` and include `Benchmaker-Portable.exe`
+- Max run cost in USD. `0` disables the cap.
+- Concurrent request limit from `1` to `20`.
 
-### Architecture Notes
+Cost estimates use OpenRouter model pricing when available and a conservative character-based token estimate before execution. Actual token and cost metadata is persisted with completed outputs when the API returns usage data.
 
-- **State Management:** All application state is managed through Zustand stores in `src/stores/`
-- **Services:** API calls and business logic are encapsulated in `src/services/`
-- **Scoring:** Pluggable scoring system in `src/scoring/` - add new scoring methods here
-- **Types:** Centralized TypeScript types in `src/types/index.ts`
-- **Database:** SQLite schema and migrations are in `src-tauri/src/main.rs`
+## Updates And Releases
 
-## Contributing
+The updater checks the latest GitHub release for platform-specific assets:
 
-Contributions are welcome! Here's how to get started:
+- Windows: `Benchmaker-Portable.exe`
+- macOS: `Benchmaker.app.zip`
 
-1. **Fork the repository**
-2. **Create a feature branch:**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. **Make your changes** following the existing code style
-4. **Test your changes** thoroughly
-5. **Commit with clear messages:**
-   ```bash
-   git commit -m "Add: description of your feature"
-   ```
-6. **Push and create a Pull Request**
+Each update asset must have a matching `.sha256` sidecar, or be covered by `checksums.txt`. The app verifies SHA-256 before writing or applying the update.
 
-### Contribution Guidelines
+The GitHub Actions release workflow also supports optional Windows code signing through:
 
-- Follow existing TypeScript/React patterns in the codebase
-- Keep components small and focused
-- Add types for all new code
-- Test changes with multiple models before submitting
-- Update documentation for new features
+- `WINDOWS_CERTIFICATE`
+- `WINDOWS_CERTIFICATE_PASSWORD`
 
-### Areas Open for Contribution
+macOS release builds require the Apple signing and notarization secrets already referenced in `.github/workflows/build.yml`.
 
-- Additional scoring plugins
-- Export functionality (JSON, CSV, PDF reports)
-- UI/UX improvements
-- Performance optimizations
-- Documentation and examples
-- Test coverage
-- Accessibility improvements
+## Project Layout
 
-## Roadmap
+```text
+src/
+  components/        React UI
+  scoring/           Scoring implementations and judge helpers
+  services/          OpenRouter, execution, local DB, updater, cost controls
+  stores/            Zustand stores
+  types/             Shared TypeScript types
+src-tauri/
+  src/main.rs        Tauri commands, SQLite schema, updater helpers
+tests/e2e/           Playwright smoke tests
+.github/workflows/   Build and quality workflows
+```
 
-- [ ] Code execution sandbox scoring
-- [ ] Cost-aware benchmarking (track API costs)
-- [ ] Prompt diff/comparison tools
-- [ ] Export to JSON/CSV/PDF
-- [ ] Public shareable benchmark URLs
-- [ ] CI-style automated regression runs
-- [ ] Team workspaces and collaboration
-- [ ] Model cost tracking and optimization suggestions
+## Useful Files
 
-## License
+- `TESTING_METHODOLOGY.md`: scoring and reproducibility notes
+- `UPDATE_ARCHITECTURE.md`: updater contract and release assets
+- `RELEASE_RUNBOOK.md`: signing, notarization, and manual release smoke gates
+- `TAURI2_MIGRATION_ASSESSMENT.md`: migration scope and recommendation
+- `plans/code-arena-plan.md`: historical Code Arena implementation plan
 
-[MIT License](LICENSE)
+## Current Roadmap
 
-## Acknowledgments
-
-- [OpenRouter](https://openrouter.ai/) for unified LLM API access
-- [Tauri](https://tauri.app/) for the desktop framework
-- [Radix UI](https://www.radix-ui.com/) for accessible component primitives
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editing experience
-- [Lucide](https://lucide.dev/) for beautiful icons
+- Add richer export/reporting formats.
+- Add deeper browser-level Code Arena verification.
+- Reduce frontend bundle size with route/component chunking.
+- Consider a Tauri 2 migration once the updater and plugin model are worth the migration cost.

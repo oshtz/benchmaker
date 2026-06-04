@@ -168,6 +168,8 @@ export interface Settings {
   defaultTemperature: number
   defaultTopP: number
   defaultMaxTokens: number
+  maxRunCostUsd: number
+  concurrencyLimit: number
   theme: 'light' | 'dark' | 'system'
 }
 

@@ -1,4 +1,4 @@
-type GitHubReleaseAsset = {
+export type GitHubReleaseAsset = {
   name: string
   browser_download_url: string
 }
@@ -14,7 +14,9 @@ export type UpdateInfo = {
   version: string
   notes: string | null
   publishedAt: string | null
+  assetName: string
   downloadUrl: string
+  checksumUrl: string
 }
 
 const GITHUB_REPO = 'oshtz/Benchmaker'
@@ -25,26 +27,30 @@ type AssetConfig = {
   extension: string
 }
 
+export function getAssetConfigForPlatform(os: string): AssetConfig {
+  if (os === 'darwin') {
+    return { name: 'Benchmaker.app.zip', extension: '.app.zip' }
+  }
+
+  return { name: 'Benchmaker-Portable.exe', extension: '.exe' }
+}
+
 async function getAssetConfig(): Promise<AssetConfig> {
   const { platform } = await import('@tauri-apps/api/os')
   const os = await platform()
 
-  if (os === 'darwin') {
-    return { name: 'Benchmaker.app.zip', extension: '.app.zip' }
-  }
-  // Default to Windows
-  return { name: 'Benchmaker-Portable.exe', extension: '.exe' }
+  return getAssetConfigForPlatform(os)
 }
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
 }
 
-function normalizeVersion(version: string): string {
+export function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, '').split('-')[0]
 }
 
-function compareVersions(left: string, right: string): number {
+export function compareVersions(left: string, right: string): number {
   const leftParts = normalizeVersion(left).split('.').map((part) => Number(part) || 0)
   const rightParts = normalizeVersion(right).split('.').map((part) => Number(part) || 0)
   const maxLength = Math.max(leftParts.length, rightParts.length)
@@ -108,7 +114,138 @@ async function downloadBinary(url: string): Promise<Uint8Array> {
     throw new Error(`Update download failed (${response.status})`)
   }
 
+  return response.data instanceof Uint8Array
+    ? response.data
+    : new Uint8Array(response.data as unknown as number[])
+}
+
+async function fetchText(url: string): Promise<string> {
+  const { fetch, ResponseType } = await import('@tauri-apps/api/http')
+
+  let response
+  try {
+    response = await fetch<string>(url, {
+      method: 'GET',
+      responseType: ResponseType.Text,
+      headers: {
+        'User-Agent': 'Benchmaker',
+      },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Checksum download failed: ${message}`)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Checksum download failed (${response.status})`)
+  }
+
   return response.data
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const hashInput = Uint8Array.from(bytes)
+  const digest = await crypto.subtle.digest('SHA-256', hashInput.buffer)
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export function selectUpdateAssets(
+  assets: GitHubReleaseAsset[],
+  assetConfig: AssetConfig
+): { asset: GitHubReleaseAsset; checksumAsset: GitHubReleaseAsset } {
+  const asset =
+    assets.find((entry) => entry.name === assetConfig.name) ??
+    assets.find((entry) =>
+      entry.browser_download_url.toLowerCase().endsWith(assetConfig.extension)
+    )
+
+  if (!asset) {
+    throw new Error('No compatible update asset found for this platform.')
+  }
+
+  const checksumAsset =
+    assets.find((entry) => entry.name === `${asset.name}.sha256`) ??
+    assets.find((entry) => entry.name === 'checksums.txt')
+
+  if (!checksumAsset) {
+    throw new Error(`No SHA-256 checksum asset found for ${asset.name}.`)
+  }
+
+  return { asset, checksumAsset }
+}
+
+export function parseExpectedSha256(checksumText: string, assetName: string): string | null {
+  const lines = checksumText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const hashPattern = /[a-f0-9]{64}/i
+
+  const matchingLine = lines.find((line) => line.includes(assetName) && hashPattern.test(line))
+  const fallbackLine = lines.find((line) => hashPattern.test(line))
+  const match = (matchingLine ?? fallbackLine)?.match(hashPattern)
+
+  return match?.[0].toLowerCase() ?? null
+}
+
+export async function verifyChecksum(
+  bytes: Uint8Array,
+  checksumText: string,
+  assetName: string
+): Promise<void> {
+  const expected = parseExpectedSha256(checksumText, assetName)
+  if (!expected) {
+    throw new Error(`Checksum file does not contain a SHA-256 hash for ${assetName}.`)
+  }
+
+  const actual = await sha256Hex(bytes)
+  if (actual !== expected) {
+    throw new Error(`Update checksum mismatch for ${assetName}.`)
+  }
+}
+
+export function getUpdateFileName(update: UpdateInfo, os: string): string {
+  return os === 'darwin'
+    ? `Benchmaker-${update.version}.app.zip`
+    : `Benchmaker-${update.version}.exe`
+}
+
+export type UpdateDownloadServices = {
+  downloadBinary: (url: string) => Promise<Uint8Array>
+  fetchText: (url: string) => Promise<string>
+  getPlatform: () => Promise<string>
+  createUpdateDir: () => Promise<void>
+  writeBinaryFile: (relativePath: string, contents: Uint8Array) => Promise<void>
+  getAppLocalDataDir: () => Promise<string>
+  joinPath: (...paths: string[]) => Promise<string>
+  extractAppZip: (zipPath: string) => Promise<string>
+}
+
+export async function downloadUpdateWithServices(
+  update: UpdateInfo,
+  services: UpdateDownloadServices
+): Promise<string> {
+  const binary = await services.downloadBinary(update.downloadUrl)
+  const checksumText = await services.fetchText(update.checksumUrl)
+  await verifyChecksum(binary, checksumText, update.assetName)
+
+  const os = await services.getPlatform()
+  const fileName = getUpdateFileName(update, os)
+  const relativePath = `${UPDATE_DIR_NAME}/${fileName}`
+
+  await services.createUpdateDir()
+  const updatePath = await services.joinPath(
+    await services.getAppLocalDataDir(),
+    UPDATE_DIR_NAME,
+    fileName
+  )
+
+  await services.writeBinaryFile(relativePath, binary)
+
+  if (os === 'darwin') {
+    return services.extractAppZip(updatePath)
+  }
+
+  return updatePath
 }
 
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
@@ -129,22 +266,15 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 
   // Find platform-specific asset
   const assetConfig = await getAssetConfig()
-  const assets = release.assets ?? []
-  const asset =
-    assets.find((entry) => entry.name === assetConfig.name) ??
-    assets.find((entry) =>
-      entry.browser_download_url.toLowerCase().endsWith(assetConfig.extension)
-    )
-
-  if (!asset) {
-    throw new Error('No compatible update asset found for this platform.')
-  }
+  const { asset, checksumAsset } = selectUpdateAssets(release.assets ?? [], assetConfig)
 
   return {
     version: latestVersion,
     notes: release.body ?? null,
     publishedAt: release.published_at ?? null,
+    assetName: asset.name,
     downloadUrl: asset.browser_download_url,
+    checksumUrl: checksumAsset.browser_download_url,
   }
 }
 
@@ -153,35 +283,26 @@ export async function downloadUpdate(update: UpdateInfo): Promise<string> {
     throw new Error('Updates require the Tauri runtime.')
   }
 
-  const binary = await downloadBinary(update.downloadUrl)
   const { appLocalDataDir, join } = await import('@tauri-apps/api/path')
   const { createDir, writeBinaryFile, BaseDirectory } = await import('@tauri-apps/api/fs')
   const { platform } = await import('@tauri-apps/api/os')
-  const os = await platform()
+  const { invoke } = await import('@tauri-apps/api/tauri')
 
-  await createDir(UPDATE_DIR_NAME, { dir: BaseDirectory.AppLocalData, recursive: true })
-
-  // Platform-specific filename
-  const fileName =
-    os === 'darwin'
-      ? `Benchmaker-${update.version}.app.zip`
-      : `Benchmaker-${update.version}.exe`
-
-  const updatePath = await join(await appLocalDataDir(), UPDATE_DIR_NAME, fileName)
-
-  await writeBinaryFile(
-    { path: `${UPDATE_DIR_NAME}/${fileName}`, contents: binary },
-    { dir: BaseDirectory.AppLocalData }
-  )
-
-  // On macOS, extract the .app from the zip
-  if (os === 'darwin') {
-    const { invoke } = await import('@tauri-apps/api/tauri')
-    const extractedPath = await invoke<string>('extract_app_zip', { zipPath: updatePath })
-    return extractedPath
-  }
-
-  return updatePath
+  return downloadUpdateWithServices(update, {
+    downloadBinary,
+    fetchText,
+    getPlatform: platform,
+    createUpdateDir: () =>
+      createDir(UPDATE_DIR_NAME, { dir: BaseDirectory.AppLocalData, recursive: true }),
+    writeBinaryFile: (relativePath, contents) =>
+      writeBinaryFile(
+        { path: relativePath, contents },
+        { dir: BaseDirectory.AppLocalData }
+      ),
+    getAppLocalDataDir: appLocalDataDir,
+    joinPath: join,
+    extractAppZip: (zipPath) => invoke<string>('extract_app_zip', { zipPath }),
+  })
 }
 
 export async function installUpdate(updatePath: string): Promise<void> {

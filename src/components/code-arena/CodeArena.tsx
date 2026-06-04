@@ -11,6 +11,7 @@ import { CodeArenaGrid } from './CodeArenaGrid'
 import { CodeArenaExecutionControls } from './CodeArenaExecutionControls'
 import { CodeArenaJudgeSelector } from './CodeArenaJudgeSelector'
 import { ModelSelector } from '@/components/arena/ModelSelector'
+import { ExecutionSafetyPanel } from '@/components/arena/ExecutionSafetyPanel'
 
 export function CodeArena() {
   const { apiKey } = useSettingsStore()
@@ -103,6 +104,9 @@ export function CodeArena() {
                 <CodeArenaHeader />
                 <div className="flex-1 min-h-0">
                   <ModelSelector useCodeArenaStore={true} />
+                </div>
+                <div className="shrink-0">
+                  <ExecutionSafetyPanel />
                 </div>
                 <div className="shrink-0">
                   <CodeArenaJudgeSelector />

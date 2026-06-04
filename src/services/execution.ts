@@ -23,7 +23,8 @@ export async function executeRun(
   runId: string,
   testSuite: TestSuite,
   apiKey: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: { concurrencyLimit?: number } = {}
 ): Promise<void> {
   const client = getOpenRouterClient(apiKey)
   const { addResult, updateResult, setResultScore, completeRun } = useRunStore.getState()
@@ -50,7 +51,7 @@ export async function executeRun(
   }
 
   // Execute all combinations in parallel batches
-  const concurrencyLimit = 5 // Limit concurrent requests
+  const concurrencyLimit = Math.min(20, Math.max(1, options.concurrencyLimit ?? 5))
   const tasks: Array<() => Promise<void>> = []
 
   for (const testCase of testSuite.testCases) {

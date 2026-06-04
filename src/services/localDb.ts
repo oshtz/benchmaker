@@ -23,7 +23,7 @@ async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): 
   return invoke<T>(command, args)
 }
 
-function normalizeSnapshot(parsed: Partial<BenchmakerDb> | null): BenchmakerDb | null {
+export function normalizeSnapshot(parsed: Partial<BenchmakerDb> | null): BenchmakerDb | null {
   if (!parsed || !Array.isArray(parsed.testSuites) || !Array.isArray(parsed.runs)) {
     return null
   }

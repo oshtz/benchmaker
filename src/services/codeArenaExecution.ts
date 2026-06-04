@@ -52,7 +52,8 @@ export async function executeCodeArenaRun(
   parameters: ModelParameters,
   apiKey: string,
   signal: AbortSignal,
-  judgeModelId: string | null
+  judgeModelId: string | null,
+  options: { concurrencyLimit?: number } = {}
 ): Promise<void> {
   const client = getOpenRouterClient(apiKey)
   const { updateOutput, setOutputScore } = useCodeArenaStore.getState()
@@ -79,7 +80,7 @@ export async function executeCodeArenaRun(
   }
 
   // Execute all models in parallel with concurrency limit
-  const concurrencyLimit = 5
+  const concurrencyLimit = Math.min(20, Math.max(1, options.concurrencyLimit ?? 5))
   const tasks: Array<() => Promise<void>> = []
 
   for (const modelId of modelIds) {

@@ -2,12 +2,15 @@ import { Play, Square, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCodeArenaStore } from '@/stores/codeArenaStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useModelStore } from '@/stores/modelStore'
 import { executeCodeArenaRun } from '@/services/codeArenaExecution'
+import { estimateCodeArenaRunCost, formatCost, isOverBudget } from '@/services/costControls'
 import { useToast } from '@/components/ui/use-toast'
 
 export function CodeArenaExecutionControls() {
   const { toast } = useToast()
-  const { apiKey } = useSettingsStore()
+  const { apiKey, maxRunCostUsd, concurrencyLimit } = useSettingsStore()
+  const { availableModels } = useModelStore()
   const {
     prompt,
     systemPrompt,
@@ -24,10 +27,30 @@ export function CodeArenaExecutionControls() {
   } = useCodeArenaStore()
 
   const isRunning = executionStatus === 'running'
-  const canRun = prompt.trim().length > 0 && selectedModelIds.length > 0 && apiKey
+  const estimatedCost = estimateCodeArenaRunCost({
+    prompt,
+    systemPrompt,
+    modelIds: selectedModelIds,
+    availableModels,
+    parameters,
+    judgeEnabled,
+    judgeModelId,
+  })
+  const overBudget = isOverBudget(estimatedCost, maxRunCostUsd)
+  const hasRunInputs = prompt.trim().length > 0 && selectedModelIds.length > 0 && apiKey
+  const canRun = hasRunInputs && !overBudget
 
   const handleRun = async () => {
-    if (!canRun || isRunning) return
+    if (!hasRunInputs || isRunning) return
+
+    if (overBudget) {
+      toast({
+        title: 'Run blocked by cost cap',
+        description: `Estimated ${formatCost(estimatedCost)} exceeds your ${formatCost(maxRunCostUsd)} cap.`,
+        variant: 'destructive',
+      })
+      return
+    }
 
     // Initialize outputs for all selected models
     initializeOutputs(selectedModelIds)
@@ -45,7 +68,8 @@ export function CodeArenaExecutionControls() {
         parameters,
         apiKey,
         controller.signal,
-        judgeEnabled ? judgeModelId : null
+        judgeEnabled ? judgeModelId : null,
+        { concurrencyLimit }
       )
       setExecutionStatus('completed')
       toast({
@@ -130,6 +154,12 @@ export function CodeArenaExecutionControls() {
           {executionStatus === 'completed' && 'Completed'}
           {executionStatus === 'failed' && 'Failed'}
           {executionStatus === 'cancelled' && 'Cancelled'}
+        </span>
+      )}
+      {selectedModelIds.length > 0 && (
+        <span className={overBudget ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+          Est. {formatCost(estimatedCost)}
+          {maxRunCostUsd > 0 && ` / cap ${formatCost(maxRunCostUsd)}`}
         </span>
       )}
     </div>
