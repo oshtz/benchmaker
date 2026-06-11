@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::AppHandle;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 // ============================================================================
@@ -1473,6 +1476,41 @@ mod tests {
         assert!(validate_install_source_name("nested/Benchmaker.exe").is_err());
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_updater_uses_staged_and_backup_paths_next_to_target() {
+        let current_exe = PathBuf::from(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe");
+
+        assert_eq!(
+            windows_update_replacement_path(&current_exe),
+            PathBuf::from(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe.update")
+        );
+        assert_eq!(
+            windows_update_backup_path(&current_exe),
+            PathBuf::from(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe.previous")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_update_script_retries_replaces_then_relaunches() {
+        let script = build_windows_update_script(
+            1234,
+            Path::new(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe.update"),
+            Path::new(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe"),
+            Path::new(r"C:\Apps\Benchmaker\Benchmaker-Portable.exe.previous"),
+            Path::new(r"C:\Users\O'Brien\AppData\Local\Benchmaker\install.log"),
+        );
+
+        assert!(script.contains("$ErrorActionPreference = 'Stop'"));
+        assert!(script.contains("for ($attempt = 1; $attempt -le 120; $attempt++)"));
+        assert!(script.contains("Move-Item -LiteralPath $target -Destination $backup -Force"));
+        assert!(script.contains("Move-Item -LiteralPath $replacement -Destination $target -Force"));
+        assert!(script.contains("Start-Process -FilePath $target"));
+        assert!(script.contains(r"C:\Users\O''Brien\AppData\Local\Benchmaker\install.log"));
+    }
+
+
     #[test]
     #[ignore]
     fn credential_store_round_trip_preserves_existing_openrouter_key() {
@@ -1749,6 +1787,147 @@ fn escape_powershell_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+fn windows_update_replacement_path(current_exe: &Path) -> PathBuf {
+    let file_name = current_exe
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Benchmaker.exe");
+    current_exe.with_file_name(format!("{file_name}.update"))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_update_backup_path(current_exe: &Path) -> PathBuf {
+    let file_name = current_exe
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Benchmaker.exe");
+    current_exe.with_file_name(format!("{file_name}.previous"))
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_windows_replacement(update_file: &Path, current_exe: &Path) -> Result<PathBuf, String> {
+    let replacement = windows_update_replacement_path(current_exe);
+
+    if replacement.exists() {
+        fs::remove_file(&replacement)
+            .map_err(|err| format!("Could not remove a stale staged update: {err}"))?;
+    }
+
+    fs::copy(update_file, &replacement)
+        .map_err(|err| format!("Could not stage update next to Benchmaker executable: {err}"))?;
+
+    let source_size = fs::metadata(update_file)
+        .map_err(|err| format!("Could not inspect downloaded update: {err}"))?
+        .len();
+    let replacement_size = fs::metadata(&replacement)
+        .map_err(|err| format!("Could not inspect staged update: {err}"))?
+        .len();
+
+    if source_size != replacement_size {
+        let _ = fs::remove_file(&replacement);
+        return Err("Staged update size did not match the downloaded update.".to_string());
+    }
+
+    Ok(replacement)
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_update_script(
+    pid: u32,
+    replacement: &Path,
+    target: &Path,
+    backup: &Path,
+    log: &Path,
+) -> String {
+    let template = r#"$ErrorActionPreference = 'Stop'
+$procId = __PID__
+$replacement = '__REPLACEMENT__'
+$target = '__TARGET__'
+$backup = '__BACKUP__'
+$log = '__LOG__'
+
+function Write-UpdateLog([string]$message) {
+  try {
+    $timestamp = (Get-Date).ToString('s')
+    Add-Content -LiteralPath $log -Value "$timestamp $message"
+  } catch {}
+}
+
+Write-UpdateLog "Waiting for process $procId to exit."
+while (Get-Process -Id $procId -ErrorAction SilentlyContinue) {
+  Start-Sleep -Milliseconds 200
+}
+
+for ($attempt = 1; $attempt -le 120; $attempt++) {
+  try {
+    if (Test-Path -LiteralPath $backup) {
+      Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+    }
+
+    if (-not (Test-Path -LiteralPath $replacement)) {
+      throw "Staged update is missing: $replacement"
+    }
+
+    Move-Item -LiteralPath $target -Destination $backup -Force
+    Move-Item -LiteralPath $replacement -Destination $target -Force
+    Write-UpdateLog "Installed update on attempt $attempt."
+    Start-Process -FilePath $target
+    Start-Sleep -Seconds 2
+
+    if (Test-Path -LiteralPath $backup) {
+      Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+    }
+
+    exit 0
+  } catch {
+    $errorMessage = $_.Exception.Message
+    Write-UpdateLog "Attempt $attempt failed: $errorMessage"
+
+    if ((-not (Test-Path -LiteralPath $target)) -and (Test-Path -LiteralPath $backup)) {
+      try {
+        Move-Item -LiteralPath $backup -Destination $target -Force
+        Write-UpdateLog "Restored previous executable after failed attempt $attempt."
+      } catch {
+        Write-UpdateLog "Failed to restore previous executable: $($_.Exception.Message)"
+      }
+    }
+
+    Start-Sleep -Milliseconds 500
+  }
+}
+
+Write-UpdateLog "Update failed after retries."
+try {
+  if ((-not (Test-Path -LiteralPath $target)) -and (Test-Path -LiteralPath $backup)) {
+    Move-Item -LiteralPath $backup -Destination $target -Force
+  }
+
+  if (Test-Path -LiteralPath $target) {
+    Start-Process -FilePath $target
+  }
+} catch {
+  Write-UpdateLog "Failed to relaunch after update failure: $($_.Exception.Message)"
+}
+
+exit 1
+"#;
+
+    template
+        .replace("__PID__", &pid.to_string())
+        .replace(
+            "__REPLACEMENT__",
+            &escape_powershell_literal(&replacement.to_string_lossy()),
+        )
+        .replace("__TARGET__", &escape_powershell_literal(&target.to_string_lossy()))
+        .replace("__BACKUP__", &escape_powershell_literal(&backup.to_string_lossy()))
+        .replace("__LOG__", &escape_powershell_literal(&log.to_string_lossy()))
+}
+
 #[cfg(target_os = "macos")]
 fn escape_bash_literal(value: &str) -> String {
     value.replace('\'', "'\\''")
@@ -1767,15 +1946,23 @@ fn apply_update(app: AppHandle, update_path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let script = format!(
-            "$procId = {pid}; $source = '{source}'; $target = '{target}'; while (Get-Process -Id $procId -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 200 }}; Move-Item -Force $source $target; Start-Process $target",
-            pid = pid,
-            source = escape_powershell_literal(&update_file.to_string_lossy()),
-            target = escape_powershell_literal(&current_exe.to_string_lossy()),
-        );
+        let replacement = prepare_windows_replacement(&update_file, &current_exe)?;
+        let backup = windows_update_backup_path(&current_exe);
+        let log = update_dir(&app)?.join("install.log");
+        let script = build_windows_update_script(pid, &replacement, &current_exe, &backup, &log);
 
-        Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &script,
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|err| err.to_string())?;
     }
