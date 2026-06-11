@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Benchmaker",
-    "version": "0.1.7"
+    "version": "0.1.8"
   },
   "tauri": {
     "allowlist": {
@@ -24,6 +24,8 @@
         "request": true,
         "scope": [
           "https://api.github.com/**",
+          "https://github.com/oshtz/benchmaker/releases/download/**",
+          "https://github.com/oshtz/benchmaker/releases/download/*/*",
           "https://github.com/oshtz/benchmaker/releases/**",
           "https://objects.githubusercontent.com/**"
         ]

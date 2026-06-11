@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   compareVersions,
   downloadUpdateWithServices,
+  getAssetDownloadUrl,
   getAssetConfigForPlatform,
   getUpdateFileName,
   parseExpectedSha256,
@@ -16,10 +17,15 @@ const SHA_A = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 const SHA_B = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
 const UPDATE_BYTES = new TextEncoder().encode('benchmaker-update')
 
-function asset(name: string, url = `https://github.com/oshtz/benchmaker/releases/download/v1/${name}`): GitHubReleaseAsset {
+function asset(
+  name: string,
+  browserUrl = `https://github.com/oshtz/benchmaker/releases/download/v1/${name}`,
+  apiUrl = `https://api.github.com/repos/oshtz/benchmaker/releases/assets/${encodeURIComponent(name)}`
+): GitHubReleaseAsset {
   return {
     name,
-    browser_download_url: url,
+    url: apiUrl,
+    browser_download_url: browserUrl,
   }
 }
 
@@ -134,6 +140,21 @@ describe('updater helpers', () => {
 
     expect(selected.asset.name).toBe('Benchmaker_0.1.5_x64.exe')
     expect(selected.checksumAsset.name).toBe('Benchmaker_0.1.5_x64.exe.sha256')
+  })
+
+  it('prefers GitHub API asset URLs for scoped update downloads', () => {
+    const releaseAsset = asset(
+      'Benchmaker-Portable.exe',
+      'https://github.com/oshtz/benchmaker/releases/download/v1/Benchmaker-Portable.exe',
+      'https://api.github.com/repos/oshtz/benchmaker/releases/assets/123'
+    )
+
+    expect(getAssetDownloadUrl(releaseAsset)).toBe(
+      'https://api.github.com/repos/oshtz/benchmaker/releases/assets/123'
+    )
+    expect(getAssetDownloadUrl({ ...releaseAsset, url: undefined })).toBe(
+      'https://github.com/oshtz/benchmaker/releases/download/v1/Benchmaker-Portable.exe'
+    )
   })
 
   it('rejects assets without checksum coverage', () => {

@@ -1,5 +1,6 @@
 export type GitHubReleaseAsset = {
   name: string
+  url?: string
   browser_download_url: string
 }
 
@@ -101,6 +102,7 @@ async function downloadBinary(url: string): Promise<Uint8Array> {
       method: 'GET',
       responseType: ResponseType.Binary,
       headers: {
+        Accept: 'application/octet-stream',
         'User-Agent': 'Benchmaker',
       },
     })
@@ -127,6 +129,7 @@ async function fetchText(url: string): Promise<string> {
       method: 'GET',
       responseType: ResponseType.Text,
       headers: {
+        Accept: 'application/octet-stream',
         'User-Agent': 'Benchmaker',
       },
     })
@@ -173,6 +176,10 @@ export function selectUpdateAssets(
   }
 
   return { asset, checksumAsset }
+}
+
+export function getAssetDownloadUrl(asset: GitHubReleaseAsset): string {
+  return asset.url ?? asset.browser_download_url
 }
 
 export function parseExpectedSha256(checksumText: string, assetName: string): string | null {
@@ -260,8 +267,8 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
     notes: release.body ?? null,
     publishedAt: release.published_at ?? null,
     assetName: asset.name,
-    downloadUrl: asset.browser_download_url,
-    checksumUrl: checksumAsset.browser_download_url,
+    downloadUrl: getAssetDownloadUrl(asset),
+    checksumUrl: getAssetDownloadUrl(checksumAsset),
   }
 }
 
