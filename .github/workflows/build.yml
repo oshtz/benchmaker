@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Setup Rust
@@ -44,7 +44,17 @@ jobs:
 
       - name: Install Enigma Virtual Box
         shell: pwsh
+        env:
+          EVB_INSTALLER_SHA256: ${{ vars.EVB_INSTALLER_SHA256 }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:EVB_INSTALLER_SHA256)) {
+            throw "EVB_INSTALLER_SHA256 repository variable is required before downloading the Enigma Virtual Box installer."
+          }
+          $expectedHash = $env:EVB_INSTALLER_SHA256.Trim().ToLowerInvariant()
+          if ($expectedHash -notmatch '^[a-f0-9]{64}$') {
+            throw "EVB_INSTALLER_SHA256 must be a 64-character SHA-256 hex digest."
+          }
+
           # Download EVB installer with multiple fallback sources
           $evbUrls = @(
             "https://www.enigmaprotector.com/assets/files/enigmavb.exe",
@@ -54,7 +64,14 @@ jobs:
           $evbInstaller = Join-Path $env:RUNNER_TEMP "enigmavb_setup.exe"
           $downloaded = (Test-Path $evbInstaller) -and (Get-Item $evbInstaller).Length -gt 1MB
           if ($downloaded) {
-            Write-Host "Using cached EVB installer."
+            $cachedHash = (Get-FileHash -Algorithm SHA256 $evbInstaller).Hash.ToLowerInvariant()
+            if ($cachedHash -eq $expectedHash) {
+              Write-Host "Using cached EVB installer."
+            } else {
+              Write-Warning "Cached EVB installer hash mismatch; deleting cache entry and downloading again."
+              Remove-Item -LiteralPath $evbInstaller -Force
+              $downloaded = $false
+            }
           }
           foreach ($evbUrl in $evbUrls) {
             if ($downloaded) { break }
@@ -83,6 +100,11 @@ jobs:
 
           if (-not $downloaded) {
             throw "Failed to download EVB installer. The enigmaprotector.com site may be blocking CI downloads. Consider caching the installer in a GitHub release."
+          }
+
+          $actualHash = (Get-FileHash -Algorithm SHA256 $evbInstaller).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "EVB installer SHA-256 mismatch. Expected $expectedHash but got $actualHash."
           }
 
           # Install silently
@@ -240,7 +262,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Setup Rust

@@ -1,17 +1,29 @@
-import { appWindow } from '@tauri-apps/api/window'
 import { Minus, Square, X } from 'lucide-react'
 
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && ('__TAURI_IPC__' in window || '__TAURI__' in window)
+}
+
+async function getAppWindow() {
+  const { appWindow } = await import('@tauri-apps/api/window')
+  return appWindow
+}
+
 export function TitleBar() {
-  const handleMinimize = () => {
-    void appWindow.minimize()
+  if (!isTauriRuntime()) {
+    return null
   }
 
-  const handleMaximize = () => {
-    void appWindow.toggleMaximize()
+  const handleMinimize = async () => {
+    await (await getAppWindow()).minimize()
   }
 
-  const handleClose = () => {
-    void appWindow.close()
+  const handleMaximize = async () => {
+    await (await getAppWindow()).toggleMaximize()
+  }
+
+  const handleClose = async () => {
+    await (await getAppWindow()).close()
   }
 
   return (

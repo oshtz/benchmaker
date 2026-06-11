@@ -20,7 +20,6 @@ export type UpdateInfo = {
 }
 
 const GITHUB_REPO = 'oshtz/benchmaker'
-const UPDATE_DIR_NAME = 'benchmaker-updates'
 
 type AssetConfig = {
   name: string
@@ -36,8 +35,8 @@ export function getAssetConfigForPlatform(os: string): AssetConfig {
 }
 
 async function getAssetConfig(): Promise<AssetConfig> {
-  const { platform } = await import('@tauri-apps/api/os')
-  const os = await platform()
+  const { invoke } = await import('@tauri-apps/api/tauri')
+  const os = await invoke<string>('get_update_platform')
 
   return getAssetConfigForPlatform(os)
 }
@@ -213,10 +212,7 @@ export type UpdateDownloadServices = {
   downloadBinary: (url: string) => Promise<Uint8Array>
   fetchText: (url: string) => Promise<string>
   getPlatform: () => Promise<string>
-  createUpdateDir: () => Promise<void>
-  writeBinaryFile: (relativePath: string, contents: Uint8Array) => Promise<void>
-  getAppLocalDataDir: () => Promise<string>
-  joinPath: (...paths: string[]) => Promise<string>
+  writeUpdateFile: (fileName: string, contents: Uint8Array) => Promise<string>
   extractAppZip: (zipPath: string) => Promise<string>
 }
 
@@ -230,16 +226,7 @@ export async function downloadUpdateWithServices(
 
   const os = await services.getPlatform()
   const fileName = getUpdateFileName(update, os)
-  const relativePath = `${UPDATE_DIR_NAME}/${fileName}`
-
-  await services.createUpdateDir()
-  const updatePath = await services.joinPath(
-    await services.getAppLocalDataDir(),
-    UPDATE_DIR_NAME,
-    fileName
-  )
-
-  await services.writeBinaryFile(relativePath, binary)
+  const updatePath = await services.writeUpdateFile(fileName, binary)
 
   if (os === 'darwin') {
     return services.extractAppZip(updatePath)
@@ -283,24 +270,17 @@ export async function downloadUpdate(update: UpdateInfo): Promise<string> {
     throw new Error('Updates require the Tauri runtime.')
   }
 
-  const { appLocalDataDir, join } = await import('@tauri-apps/api/path')
-  const { createDir, writeBinaryFile, BaseDirectory } = await import('@tauri-apps/api/fs')
-  const { platform } = await import('@tauri-apps/api/os')
   const { invoke } = await import('@tauri-apps/api/tauri')
 
   return downloadUpdateWithServices(update, {
     downloadBinary,
     fetchText,
-    getPlatform: platform,
-    createUpdateDir: () =>
-      createDir(UPDATE_DIR_NAME, { dir: BaseDirectory.AppLocalData, recursive: true }),
-    writeBinaryFile: (relativePath, contents) =>
-      writeBinaryFile(
-        { path: relativePath, contents },
-        { dir: BaseDirectory.AppLocalData }
-      ),
-    getAppLocalDataDir: appLocalDataDir,
-    joinPath: join,
+    getPlatform: () => invoke<string>('get_update_platform'),
+    writeUpdateFile: (fileName, contents) =>
+      invoke<string>('write_update_file', {
+        fileName,
+        contents: Array.from(contents),
+      }),
     extractAppZip: (zipPath) => invoke<string>('extract_app_zip', { zipPath }),
   })
 }

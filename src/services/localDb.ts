@@ -1,4 +1,4 @@
-import type { BenchmakerDb } from '@/types'
+import type { BenchmakerDb, CodeArenaRun, RunResult, TestSuite } from '@/types'
 import { useTestSuiteStore } from '@/stores/testSuiteStore'
 import { useRunStore } from '@/stores/runStore'
 import { useCodeArenaRunStore } from '@/stores/codeArenaRunStore'
@@ -10,6 +10,23 @@ let initialized = false
 let writeTimer: number | null = null
 let writeInFlight = false
 let pendingSnapshot: BenchmakerDb | null = null
+let lastPersistedSnapshot: BenchmakerDb | null = null
+
+interface AppStateSnapshot {
+  activeTestSuiteId: string | null
+  currentRunId: string | null
+  currentCodeArenaRunId: string | null
+}
+
+export interface SnapshotChangeSet {
+  deletedTestSuiteIds: string[]
+  deletedRunIds: string[]
+  deletedCodeArenaRunIds: string[]
+  savedTestSuites: TestSuite[]
+  savedRuns: RunResult[]
+  savedCodeArenaRuns: CodeArenaRun[]
+  appStateChanged: boolean
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
@@ -53,9 +70,10 @@ export async function initLocalDb(): Promise<void> {
 
   const existing = await readLocalDb()
   if (existing) {
-    hydrateFromDb(existing)
+    hydrateFromDb(existing, { markPersisted: true })
   } else {
-    await writeLocalDb(buildSnapshot())
+    const initialSnapshot = buildSnapshot()
+    await writeLocalDb(initialSnapshot)
   }
 
   useTestSuiteStore.subscribe(() => scheduleWrite())
@@ -79,7 +97,8 @@ export async function writeLocalDb(snapshot: BenchmakerDb): Promise<void> {
   if (typeof window === 'undefined' || !isTauriRuntime()) return
 
   try {
-    await tauriInvoke<void>('write_snapshot', { snapshot })
+    await writeSnapshotChanges(lastPersistedSnapshot, snapshot)
+    lastPersistedSnapshot = cloneSnapshot(snapshot)
   } catch (error) {
     console.error('Failed to write to SQLite database:', error)
   }
@@ -102,7 +121,10 @@ export function buildSnapshot(): BenchmakerDb {
   }
 }
 
-export function hydrateFromDb(snapshot: BenchmakerDb): void {
+export function hydrateFromDb(
+  snapshot: BenchmakerDb,
+  options: { markPersisted?: boolean } = {},
+): void {
   useTestSuiteStore.setState({
     testSuites: snapshot.testSuites || [],
     activeTestSuiteId: snapshot.activeTestSuiteId ?? null,
@@ -115,6 +137,109 @@ export function hydrateFromDb(snapshot: BenchmakerDb): void {
     runs: snapshot.codeArenaRuns || [],
     currentRunId: snapshot.currentCodeArenaRunId ?? null,
   })
+
+  if (options.markPersisted) {
+    lastPersistedSnapshot = cloneSnapshot(snapshot)
+  }
+}
+
+export function buildSnapshotChangeSet(
+  previous: BenchmakerDb | null,
+  next: BenchmakerDb,
+): SnapshotChangeSet {
+  if (!previous) {
+    return {
+      deletedTestSuiteIds: [],
+      deletedRunIds: [],
+      deletedCodeArenaRunIds: [],
+      savedTestSuites: next.testSuites,
+      savedRuns: next.runs,
+      savedCodeArenaRuns: next.codeArenaRuns,
+      appStateChanged: true,
+    }
+  }
+
+  const previousTestSuites = mapById(previous.testSuites)
+  const previousRuns = mapById(previous.runs)
+  const previousCodeArenaRuns = mapById(previous.codeArenaRuns)
+  const nextTestSuites = mapById(next.testSuites)
+  const nextRuns = mapById(next.runs)
+  const nextCodeArenaRuns = mapById(next.codeArenaRuns)
+
+  return {
+    deletedTestSuiteIds: idsMissingFrom(previousTestSuites, nextTestSuites),
+    deletedRunIds: idsMissingFrom(previousRuns, nextRuns),
+    deletedCodeArenaRunIds: idsMissingFrom(previousCodeArenaRuns, nextCodeArenaRuns),
+    savedTestSuites: changedEntities(previousTestSuites, next.testSuites),
+    savedRuns: changedEntities(previousRuns, next.runs),
+    savedCodeArenaRuns: changedEntities(previousCodeArenaRuns, next.codeArenaRuns),
+    appStateChanged: entityChanged(snapshotAppState(previous), snapshotAppState(next)),
+  }
+}
+
+async function writeSnapshotChanges(
+  previous: BenchmakerDb | null,
+  next: BenchmakerDb,
+): Promise<void> {
+  const changes = buildSnapshotChangeSet(previous, next)
+
+  for (const id of changes.deletedRunIds) {
+    await tauriInvoke<void>('delete_run', { id })
+  }
+  for (const id of changes.deletedCodeArenaRunIds) {
+    await tauriInvoke<void>('delete_code_arena_run', { id })
+  }
+  for (const id of changes.deletedTestSuiteIds) {
+    await tauriInvoke<void>('delete_test_suite', { id })
+  }
+
+  for (const suite of changes.savedTestSuites) {
+    await tauriInvoke<void>('save_test_suite', { suite })
+  }
+  for (const run of changes.savedRuns) {
+    await tauriInvoke<void>('save_run', { run })
+  }
+  for (const run of changes.savedCodeArenaRuns) {
+    await tauriInvoke<void>('save_code_arena_run', { run })
+  }
+
+  if (changes.appStateChanged) {
+    await tauriInvoke<void>('save_app_state', { state: snapshotAppState(next) })
+  }
+}
+
+function mapById<T extends { id: string }>(items: T[]): Map<string, T> {
+  return new Map(items.map((item) => [item.id, item]))
+}
+
+function idsMissingFrom<T>(
+  previous: Map<string, T>,
+  next: Map<string, T>,
+): string[] {
+  return [...previous.keys()].filter((id) => !next.has(id))
+}
+
+function changedEntities<T extends { id: string }>(
+  previous: Map<string, T>,
+  next: T[],
+): T[] {
+  return next.filter((item) => entityChanged(previous.get(item.id), item))
+}
+
+function entityChanged(previous: unknown, next: unknown): boolean {
+  return JSON.stringify(previous) !== JSON.stringify(next)
+}
+
+function snapshotAppState(snapshot: BenchmakerDb): AppStateSnapshot {
+  return {
+    activeTestSuiteId: snapshot.activeTestSuiteId,
+    currentRunId: snapshot.currentRunId,
+    currentCodeArenaRunId: snapshot.currentCodeArenaRunId,
+  }
+}
+
+function cloneSnapshot(snapshot: BenchmakerDb): BenchmakerDb {
+  return JSON.parse(JSON.stringify(snapshot)) as BenchmakerDb
 }
 
 function scheduleWrite(): void {

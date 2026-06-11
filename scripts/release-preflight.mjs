@@ -72,6 +72,7 @@ function checkVersionSync() {
 function checkPackageScripts() {
   const scripts = readJson('package.json').scripts ?? {}
   const required = [
+    'lint',
     'typecheck',
     'test',
     'test:e2e',
@@ -102,6 +103,7 @@ function checkWorkflowContract() {
     'Generate macOS checksums',
     'Verify notarization credentials',
     'Cache Enigma Virtual Box installer',
+    'EVB_INSTALLER_SHA256',
   ]
 
   for (const snippet of requiredBuildSnippets) {
@@ -113,6 +115,7 @@ function checkWorkflowContract() {
   }
 
   const requiredQualitySnippets = [
+    'npm run lint',
     'npm run typecheck',
     'npm test',
     'cargo test --manifest-path src-tauri/Cargo.toml',

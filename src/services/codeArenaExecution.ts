@@ -4,31 +4,11 @@ import { useCodeArenaRunStore, createCodeArenaRun } from '@/stores/codeArenaRunS
 import { useModelStore } from '@/stores/modelStore'
 import { extractCodeFromStreamingContent, extractCodeFromResponse } from './codeExtractor'
 import { scoreCodeArenaOutput } from '@/scoring/code-arena-judge'
+import { isAbortError, throwIfAborted, withAbortableTimeout } from './abort'
 import type { ChatMessage, ModelParameters, OpenRouterModel, CodeArenaOutput } from '@/types'
 
 // Per-request timeout in milliseconds (2 minutes)
 const REQUEST_TIMEOUT_MS = 120000
-
-/**
- * Wraps a promise with a timeout. If the timeout expires, throws an error.
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(errorMessage))
-    }, timeoutMs)
-
-    promise
-      .then((result) => {
-        clearTimeout(timeoutId)
-        resolve(result)
-      })
-      .catch((error) => {
-        clearTimeout(timeoutId)
-        reject(error)
-      })
-  })
-}
 
 function calculateCost(
   usage: StreamResult['usage'],
@@ -85,9 +65,7 @@ export async function executeCodeArenaRun(
 
   for (const modelId of modelIds) {
     tasks.push(async () => {
-      if (signal.aborted) {
-        throw new DOMException('Aborted', 'AbortError')
-      }
+      throwIfAborted(signal)
 
       const startTime = Date.now()
       
@@ -114,38 +92,41 @@ export async function executeCodeArenaRun(
 
         // Stream the response with timeout
         let streamedContent = ''
-        const streamPromise = client.createChatCompletionStreamWithUsage(
-          {
-            model: modelId,
-            messages,
-            temperature: parameters.temperature,
-            top_p: parameters.topP,
-            max_tokens: parameters.maxTokens,
-            frequency_penalty: parameters.frequencyPenalty,
-            presence_penalty: parameters.presencePenalty,
-          },
-          (chunk) => {
-            streamedContent += chunk
-            
-            // Extract code from streaming content for live preview
-            const extractedCode = extractCodeFromStreamingContent(streamedContent)
-            
-            updateOutput(modelId, {
-              streamedContent,
-              extractedCode,
-            })
-            updateRunOutput(run.id, modelId, {
-              streamedContent,
-              extractedCode,
-            })
-          }
-        )
-        
-        const result = await withTimeout(
-          streamPromise,
+        const result = await withAbortableTimeout(
+          (requestSignal) =>
+            client.createChatCompletionStreamWithUsage(
+              {
+                model: modelId,
+                messages,
+                temperature: parameters.temperature,
+                top_p: parameters.topP,
+                max_tokens: parameters.maxTokens,
+                frequency_penalty: parameters.frequencyPenalty,
+                presence_penalty: parameters.presencePenalty,
+              },
+              (chunk) => {
+                streamedContent += chunk
+
+                // Extract code from streaming content for live preview
+                const extractedCode = extractCodeFromStreamingContent(streamedContent)
+
+                updateOutput(modelId, {
+                  streamedContent,
+                  extractedCode,
+                })
+                updateRunOutput(run.id, modelId, {
+                  streamedContent,
+                  extractedCode,
+                })
+              },
+              { signal: requestSignal }
+            ),
+          signal,
           REQUEST_TIMEOUT_MS,
           `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
         )
+
+        throwIfAborted(signal)
 
         const latencyMs = Date.now() - startTime
         const model = modelMap.get(modelId)
@@ -174,16 +155,18 @@ export async function executeCodeArenaRun(
               prompt,
               finalExtractedCode,
               client,
-              judgeModelId
+              judgeModelId,
+              signal
             )
             setOutputScore(modelId, score)
             setRunOutputScore(run.id, modelId, score)
           } catch (error) {
+            if (isAbortError(error)) throw error
             console.error('Failed to score output:', error)
           }
         }
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isAbortError(error)) {
           updateOutput(modelId, { status: 'cancelled' })
           updateRunOutput(run.id, modelId, { status: 'cancelled' })
           throw error
@@ -216,25 +199,26 @@ async function executeWithConcurrency(
   const errors: Error[] = []
 
   for (const task of tasks) {
-    if (signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError')
-    }
+    throwIfAborted(signal)
 
     const promise = task().catch((error) => {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         throw error
       }
       errors.push(error)
     })
 
     executing.add(promise)
-    promise.finally(() => executing.delete(promise))
+    void promise.then(
+      () => executing.delete(promise),
+      () => executing.delete(promise)
+    )
 
     if (executing.size >= limit) {
       try {
         await Promise.race(executing)
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isAbortError(error)) {
           throw error
         }
       }

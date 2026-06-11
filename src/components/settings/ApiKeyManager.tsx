@@ -126,9 +126,15 @@ export function ApiKeyManager() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant={apiKey ? 'outline' : 'default'} size="sm">
-          <Key className="h-4 w-4 mr-2" />
-          {apiKey ? 'API Key Set' : 'Set API Key'}
+        <Button
+          variant={apiKey ? 'outline' : 'default'}
+          size="sm"
+          aria-label={apiKey ? 'API Key Set' : 'Set API Key'}
+          className="gap-2 px-2.5 sm:px-3"
+        >
+          <Key className="h-4 w-4" />
+          <span className="hidden sm:inline">{apiKey ? 'API Key Set' : 'Set API Key'}</span>
+          <span className="sm:hidden">Key</span>
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -141,9 +147,17 @@ export function ApiKeyManager() {
 
         <div className="space-y-4">
           {apiKey && (
-            <div className="flex items-center justify-between p-3 bg-muted/50 border border-border/60 rounded-xl">
-              <span className="text-sm font-mono">{maskedKey}</span>
-              <Button variant="ghost" size="sm" onClick={handleClear}>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/50 p-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Check className="h-4 w-4 text-emerald-500" />
+                  Saved key
+                </div>
+                <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">
+                  {maskedKey}
+                </span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleClear} aria-label="Clear API key">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -168,6 +182,7 @@ export function ApiKeyManager() {
                 variant="ghost"
                 size="sm"
                 className="absolute right-0 top-0 h-full px-3"
+                aria-label={showKey ? 'Hide API key' : 'Show API key'}
                 onClick={() => setShowKey(!showKey)}
               >
                 {showKey ? (

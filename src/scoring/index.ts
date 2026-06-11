@@ -10,7 +10,8 @@ export async function scoreResponse(
   response: string,
   client?: OpenRouterClient,
   judgeModelId?: string,
-  judgeSystemPrompt?: string
+  judgeSystemPrompt?: string,
+  signal?: AbortSignal
 ): Promise<ScoringResult> {
   switch (testCase.scoringMethod) {
     case 'exact-match':
@@ -33,7 +34,8 @@ export async function scoreResponse(
           testCase.expectedOutput,
           client,
           judgeModelId,
-          judgeSystemPrompt
+          judgeSystemPrompt,
+          signal
         )
       }
       // Fallback to boolean if no judge configured

@@ -552,7 +552,7 @@ function generateInterestingFacts(
   // Fact: Win streak
   if (timeSeriesData.length >= 3) {
     const modelWinStreaks = new Map<string, number>()
-    let currentStreak = new Map<string, number>()
+    const currentStreak = new Map<string, number>()
 
     for (const dp of timeSeriesData) {
       let maxScore = -1

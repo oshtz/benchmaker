@@ -15,6 +15,10 @@ export interface StreamResult {
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1'
 
+interface RequestOptions {
+  signal?: AbortSignal
+}
+
 export class OpenRouterClient {
   private apiKey: string
 
@@ -26,14 +30,17 @@ export class OpenRouterClient {
     return {
       Authorization: `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
+      'HTTP-Referer': typeof window === 'undefined'
+        ? 'https://github.com/oshtz/benchmaker'
+        : window.location.origin,
       'X-Title': 'Benchmaker',
     }
   }
 
-  async fetchModels(): Promise<OpenRouterModel[]> {
+  async fetchModels(options: RequestOptions = {}): Promise<OpenRouterModel[]> {
     const response = await fetch(`${OPENROUTER_API_URL}/models`, {
       headers: this.getHeaders(),
+      signal: options.signal,
     })
 
     if (!response.ok) {
@@ -46,12 +53,14 @@ export class OpenRouterClient {
   }
 
   async createChatCompletion(
-    request: ChatCompletionRequest
+    request: ChatCompletionRequest,
+    options: RequestOptions = {}
   ): Promise<ChatCompletionResponse> {
     const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(request),
+      signal: options.signal,
     })
 
     if (!response.ok) {
@@ -63,12 +72,14 @@ export class OpenRouterClient {
   }
 
   async *createChatCompletionStream(
-    request: ChatCompletionRequest
+    request: ChatCompletionRequest,
+    options: RequestOptions = {}
   ): AsyncGenerator<string, void, unknown> {
     const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ ...request, stream: true }),
+      signal: options.signal,
     })
 
     if (!response.ok) {
@@ -149,13 +160,16 @@ export class OpenRouterClient {
         }
       }
     } finally {
+      if (options.signal?.aborted) {
+        await reader.cancel().catch(() => undefined)
+      }
       reader.releaseLock()
     }
   }
 
-  async validateApiKey(): Promise<boolean> {
+  async validateApiKey(options: RequestOptions = {}): Promise<boolean> {
     try {
-      await this.fetchModels()
+      await this.fetchModels(options)
       return true
     } catch {
       return false
@@ -164,12 +178,14 @@ export class OpenRouterClient {
 
   async createChatCompletionStreamWithUsage(
     request: ChatCompletionRequest,
-    onChunk?: (content: string) => void
+    onChunk?: (content: string) => void,
+    options: RequestOptions = {}
   ): Promise<StreamResult> {
     const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ ...request, stream: true }),
+      signal: options.signal,
     })
 
     if (!response.ok) {
@@ -244,6 +260,9 @@ export class OpenRouterClient {
 
       return { content: fullContent, usage }
     } finally {
+      if (options.signal?.aborted) {
+        await reader.cancel().catch(() => undefined)
+      }
       reader.releaseLock()
     }
   }

@@ -52,6 +52,7 @@ npm run dev
 
 ```bash
 npm run typecheck
+npm run lint
 npm test
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run build
@@ -59,7 +60,7 @@ npm run test:e2e
 npm audit --audit-level=moderate
 ```
 
-`npm run check` runs TypeScript, Vitest, and Rust tests. The Playwright smoke test uses Vite preview on port `4273` by default; override it with `PLAYWRIGHT_PORT` if needed.
+`npm run check` runs ESLint, TypeScript, Vitest, and Rust tests. The Playwright smoke test uses Vite preview on port `4273` by default; override it with `PLAYWRIGHT_PORT` if needed.
 
 ## Data And Security
 
@@ -91,6 +92,8 @@ The GitHub Actions release workflow also supports optional Windows code signing 
 
 - `WINDOWS_CERTIFICATE`
 - `WINDOWS_CERTIFICATE_PASSWORD`
+
+Windows portable packaging also requires the repository variable `EVB_INSTALLER_SHA256` with the expected SHA-256 of the Enigma Virtual Box installer.
 
 macOS release builds require the Apple signing and notarization secrets already referenced in `.github/workflows/build.yml`.
 

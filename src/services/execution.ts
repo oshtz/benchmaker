@@ -2,6 +2,7 @@ import { getOpenRouterClient, type StreamResult } from './openrouter'
 import { useRunStore } from '@/stores/runStore'
 import { useModelStore } from '@/stores/modelStore'
 import { scoreResponse } from '@/scoring'
+import { delay, isAbortError, throwIfAborted, withAbortableTimeout } from './abort'
 import type { TestSuite, TestCaseResult, ChatMessage, ModelParameters, OpenRouterModel } from '@/types'
 
 function calculateCost(
@@ -57,9 +58,7 @@ export async function executeRun(
   for (const testCase of testSuite.testCases) {
     for (const modelId of selectedModelIds) {
       tasks.push(async () => {
-        if (signal.aborted) {
-          throw new DOMException('Aborted', 'AbortError')
-        }
+        throwIfAborted(signal)
 
         const startTime = Date.now()
         updateResult(runId, testCase.id, modelId, { status: 'running' })
@@ -92,6 +91,8 @@ export async function executeRun(
             updateResult
           )
 
+          throwIfAborted(signal)
+
           const latencyMs = Date.now() - startTime
           const model = modelMap.get(modelId)
           const cost = calculateCost(usage, model)
@@ -111,12 +112,13 @@ export async function executeRun(
             fullResponse,
             judgeModelId ? client : undefined,
             judgeModelId || undefined,
-            testSuite.judgeSystemPrompt
+            testSuite.judgeSystemPrompt,
+            signal
           )
 
           setResultScore(runId, testCase.id, modelId, score)
         } catch (error) {
-          if (error instanceof DOMException && error.name === 'AbortError') {
+          if (isAbortError(error)) {
             updateResult(runId, testCase.id, modelId, { status: 'cancelled' })
             throw error
           }
@@ -150,27 +152,6 @@ interface ResponseWithUsage {
   usage?: StreamResult['usage']
 }
 
-/**
- * Wraps a promise with a timeout. If the timeout expires, throws an error.
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject(new Error(errorMessage))
-    }, timeoutMs)
-
-    promise
-      .then((result) => {
-        clearTimeout(timeoutId)
-        resolve(result)
-      })
-      .catch((error) => {
-        clearTimeout(timeoutId)
-        reject(error)
-      })
-  })
-}
-
 async function generateResponseWithRetries(
   client: ReturnType<typeof getOpenRouterClient>,
   modelId: string,
@@ -184,32 +165,30 @@ async function generateResponseWithRetries(
   for (let attempt = 0; attempt <= MAX_EMPTY_RESPONSE_RETRIES; attempt++) {
     updateResult(runId, testCaseId, modelId, { streamedContent: '' })
 
-    if (signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError')
-    }
+    throwIfAborted(signal)
 
     let streamedContent = ''
-    const streamPromise = client.createChatCompletionStreamWithUsage(
-      {
-        model: modelId,
-        messages,
-        temperature: parameters.temperature,
-        top_p: parameters.topP,
-        max_tokens: parameters.maxTokens,
-        frequency_penalty: parameters.frequencyPenalty,
-        presence_penalty: parameters.presencePenalty,
-      },
-      (chunk) => {
-        streamedContent += chunk
-        updateResult(runId, testCaseId, modelId, {
-          streamedContent,
-        })
-      }
-    )
-    
-    // Apply timeout to the streaming request
-    const result = await withTimeout(
-      streamPromise,
+    const result = await withAbortableTimeout(
+      (requestSignal) =>
+        client.createChatCompletionStreamWithUsage(
+          {
+            model: modelId,
+            messages,
+            temperature: parameters.temperature,
+            top_p: parameters.topP,
+            max_tokens: parameters.maxTokens,
+            frequency_penalty: parameters.frequencyPenalty,
+            presence_penalty: parameters.presencePenalty,
+          },
+          (chunk) => {
+            streamedContent += chunk
+            updateResult(runId, testCaseId, modelId, {
+              streamedContent,
+            })
+          },
+          { signal: requestSignal }
+        ),
+      signal,
       REQUEST_TIMEOUT_MS,
       `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
     )
@@ -233,10 +212,7 @@ async function generateResponseWithRetries(
     }
 
     if (attempt < MAX_EMPTY_RESPONSE_RETRIES) {
-      if (signal.aborted) {
-        throw new DOMException('Aborted', 'AbortError')
-      }
-      await delay(EMPTY_RESPONSE_BACKOFF_MS * (attempt + 1))
+      await delay(EMPTY_RESPONSE_BACKOFF_MS * (attempt + 1), signal)
     }
   }
 
@@ -250,35 +226,37 @@ async function fetchNonStreamingResponse(
   parameters: ModelParameters,
   signal: AbortSignal
 ): Promise<ResponseWithUsage> {
-  if (signal.aborted) {
-    throw new DOMException('Aborted', 'AbortError')
-  }
+  throwIfAborted(signal)
 
   try {
-    const completion = await client.createChatCompletion({
-      model: modelId,
-      messages,
-      temperature: parameters.temperature,
-      top_p: parameters.topP,
-      max_tokens: parameters.maxTokens,
-      frequency_penalty: parameters.frequencyPenalty,
-      presence_penalty: parameters.presencePenalty,
-    })
+    const completion = await withAbortableTimeout(
+      (requestSignal) =>
+        client.createChatCompletion(
+          {
+            model: modelId,
+            messages,
+            temperature: parameters.temperature,
+            top_p: parameters.topP,
+            max_tokens: parameters.maxTokens,
+            frequency_penalty: parameters.frequencyPenalty,
+            presence_penalty: parameters.presencePenalty,
+          },
+          { signal: requestSignal }
+        ),
+      signal,
+      REQUEST_TIMEOUT_MS,
+      `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+    )
 
     const content = completion.choices?.[0]?.message?.content
     return {
       content: typeof content === 'string' ? content : '',
       usage: completion.usage,
     }
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error
     return { content: '' }
   }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 }
 
 export interface ExecutionErrors {
@@ -296,25 +274,26 @@ async function executeWithConcurrency(
   const errors: Error[] = []
 
   for (const task of tasks) {
-    if (signal.aborted) {
-      throw new DOMException('Aborted', 'AbortError')
-    }
+    throwIfAborted(signal)
 
     const promise = task().catch((error) => {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         throw error
       }
       errors.push(error)
     })
 
     executing.add(promise)
-    promise.finally(() => executing.delete(promise))
+    void promise.then(
+      () => executing.delete(promise),
+      () => executing.delete(promise)
+    )
 
     if (executing.size >= limit) {
       try {
         await Promise.race(executing)
       } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (isAbortError(error)) {
           throw error
         }
       }

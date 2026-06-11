@@ -1,5 +1,6 @@
 import type { ScoringResult } from '@/types'
 import type { OpenRouterClient } from '@/services/openrouter'
+import { isAbortError, throwIfAborted } from '@/services/abort'
 
 const BASE_JUDGE_SYSTEM_PROMPT = `You are an expert evaluator assessing the quality of AI model responses. Your task is to score responses objectively based on accuracy, completeness, and adherence to the task requirements.
 
@@ -28,9 +29,12 @@ export async function scoreLLMJudge(
   expectedOutput: string | undefined,
   client: OpenRouterClient,
   judgeModelId: string,
-  judgeSystemPrompt?: string
+  judgeSystemPrompt?: string,
+  signal?: AbortSignal
 ): Promise<ScoringResult> {
   try {
+    if (signal) throwIfAborted(signal)
+
     if (!response || !response.trim()) {
       return {
         score: 0,
@@ -44,20 +48,25 @@ export async function scoreLLMJudge(
     const judgePrompt = buildJudgePrompt(prompt, response, expectedOutput)
     const systemPrompt = buildJudgeSystemPrompt(judgeSystemPrompt)
 
-    const completion = await client.createChatCompletion({
-      model: judgeModelId,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: judgePrompt },
-      ],
-      temperature: 0.1, // Low temperature for consistent scoring
-      max_tokens: 500,
-    })
+    const completion = await client.createChatCompletion(
+      {
+        model: judgeModelId,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: judgePrompt },
+        ],
+        temperature: 0.1, // Low temperature for consistent scoring
+        max_tokens: 500,
+      },
+      { signal }
+    )
 
     const judgeResponse = completion.choices[0]?.message?.content || ''
 
     return parseJudgeResponse(judgeResponse)
   } catch (error) {
+    if (isAbortError(error)) throw error
+
     return {
       score: 0,
       confidence: 0,
@@ -281,7 +290,7 @@ function extractScoreFromText(
   response: string
 ): { score: number; reasoning?: string } | null {
   const scoreMatch = response.match(
-    /(?:score|rating)[\s*"':=\-]*(\d+(?:\.\d+)?)(?:\s*\/\s*(10|100))?/i
+    /(?:score|rating)[\s*"':=-]*(\d+(?:\.\d+)?)(?:\s*\/\s*(10|100))?/i
   )
   const fallbackMatch = response.match(
     /^\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(10|100))?\s*$/i
@@ -299,7 +308,7 @@ function extractScoreFromText(
   }
 
   const reasoningMatch = response.match(
-    /(?:reasoning|rationale|explanation)[\s*"':=\-]*([^\n\r]+)/i
+    /(?:reasoning|rationale|explanation)[\s*"':=-]*([^\n\r]+)/i
   )
 
   return {

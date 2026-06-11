@@ -66,62 +66,74 @@ export function PromptManager() {
             },
           ]}
           action={
-            <div className="flex flex-col sm:flex-row gap-4 items-center">
-              <BenchmarkGeneratorDialog
-                trigger={
-                  <Button size="lg" disabled={!apiKey} className="gap-2">
-                    <Wand2 className="h-4 w-4" />
-                    Generate with AI
-                  </Button>
-                }
-              />
-              <span className="text-muted-foreground text-sm font-medium">or</span>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="lg" variant="outline" className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Create manually
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl border-border/40 bg-background/95 backdrop-blur-xl">
-                  <DialogHeader>
-                    <DialogTitle className="text-gradient">Create Test Suite</DialogTitle>
-                    <DialogDescription>
-                      A test suite contains a system prompt and multiple test cases
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="suite-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</Label>
-                      <Input
-                        id="suite-name"
-                        placeholder="e.g., Logic Puzzles Benchmark"
-                        value={newSuiteName}
-                        onChange={(e) => setNewSuiteName(e.target.value)}
-                        className="bg-background/50"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="suite-description" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description (optional)</Label>
-                      <Input
-                        id="suite-description"
-                        placeholder="e.g., Tests reasoning and logic capabilities"
-                        value={newSuiteDescription}
-                        onChange={(e) => setNewSuiteDescription(e.target.value)}
-                        className="bg-background/50"
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="ghost" onClick={() => setDialogOpen(false)}>
-                      Cancel
+            <div className="flex w-full flex-col items-center gap-3">
+              <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
+                <BenchmarkGeneratorDialog
+                  trigger={
+                    <Button
+                      size="lg"
+                      variant={apiKey ? 'default' : 'outline'}
+                      disabled={!apiKey}
+                      className="gap-2"
+                    >
+                      <Wand2 className="h-4 w-4" />
+                      Generate with AI
                     </Button>
-                    <Button onClick={handleCreateSuite} disabled={!newSuiteName.trim()}>
-                      Create Suite
+                  }
+                />
+                <span className="text-center text-sm font-medium text-muted-foreground">or</span>
+                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="lg" variant={apiKey ? 'outline' : 'default'} className="gap-2">
+                      <Plus className="h-4 w-4" />
+                      Create manually
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-xl border-border/40 bg-background/95 backdrop-blur-xl">
+                    <DialogHeader>
+                      <DialogTitle className="text-gradient">Create Test Suite</DialogTitle>
+                      <DialogDescription>
+                        A test suite contains a system prompt and multiple test cases
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="suite-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</Label>
+                        <Input
+                          id="suite-name"
+                          placeholder="e.g., Logic Puzzles Benchmark"
+                          value={newSuiteName}
+                          onChange={(e) => setNewSuiteName(e.target.value)}
+                          className="bg-background/50"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="suite-description" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description (optional)</Label>
+                        <Input
+                          id="suite-description"
+                          placeholder="e.g., Tests reasoning and logic capabilities"
+                          value={newSuiteDescription}
+                          onChange={(e) => setNewSuiteDescription(e.target.value)}
+                          className="bg-background/50"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateSuite} disabled={!newSuiteName.trim()}>
+                        Create Suite
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              {!apiKey && (
+                <p className="max-w-md text-center text-xs text-muted-foreground">
+                  Add an OpenRouter key from the header to generate a starter suite automatically.
+                </p>
+              )}
             </div>
           }
         />

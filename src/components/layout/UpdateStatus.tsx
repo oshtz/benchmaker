@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { ArrowUpRight, RefreshCw, CheckCircle2, AlertTriangle, DownloadCloud } from 'lucide-react'
+import { Info, RefreshCw, CheckCircle2, AlertTriangle, DownloadCloud } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -42,6 +42,12 @@ export function UpdateStatus() {
   const canDownload = status === 'available'
   const canInstall = status === 'ready' && !!updatePath
   const hasUpdate = status === 'available' || status === 'downloading' || status === 'ready'
+  const isBusy = status === 'checking' || status === 'downloading' || status === 'installing'
+  const StatusIcon = status === 'error' || status === 'disabled'
+    ? AlertTriangle
+    : hasUpdate
+      ? DownloadCloud
+      : CheckCircle2
 
   const lastCheckedText = useMemo(() => {
     if (!lastCheckedAt) return 'Never'
@@ -63,15 +69,23 @@ export function UpdateStatus() {
     await installNow()
   }
 
-  const versionLabel = currentVersion ? `v${currentVersion}` : 'v--'
+  const versionLabel = currentVersion ? `v${currentVersion}` : 'About'
+  const triggerLabel = hasUpdate ? 'Update' : versionLabel
+  const TriggerIcon = isBusy ? RefreshCw : hasUpdate ? DownloadCloud : Info
 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2">
-          <ArrowUpRight className="h-4 w-4" />
-          <span className="text-xs font-mono">{versionLabel}</span>
-          {hasUpdate && <Badge className="text-[10px] uppercase">Update</Badge>}
+        <Button
+          variant={hasUpdate ? 'outline' : 'ghost'}
+          size="sm"
+          aria-label={hasUpdate ? 'Open update status' : 'About Benchmaker'}
+          className="gap-2 px-2.5 sm:px-3"
+        >
+          <TriggerIcon className={isBusy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          <span className="hidden text-xs font-semibold sm:inline">{triggerLabel}</span>
+          <span className="text-xs font-semibold sm:hidden">{hasUpdate ? 'Update' : 'About'}</span>
+          {hasUpdate && <Badge className="hidden text-[10px] uppercase lg:inline-flex">Ready</Badge>}
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -89,11 +103,17 @@ export function UpdateStatus() {
           <Separator />
 
           <div className="flex items-center gap-2 text-sm">
-            {status === 'error' ? (
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-            )}
+            <StatusIcon
+              className={
+                status === 'error'
+                  ? 'h-4 w-4 text-destructive'
+                  : status === 'disabled'
+                    ? 'h-4 w-4 text-amber-500'
+                    : hasUpdate
+                      ? 'h-4 w-4 text-primary'
+                      : 'h-4 w-4 text-emerald-500'
+              }
+            />
             <span>{statusLabel}</span>
           </div>
 
@@ -130,7 +150,7 @@ export function UpdateStatus() {
             </div>
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button variant="outline" size="sm" onClick={handleCheck} disabled={!canCheck}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Check for updates

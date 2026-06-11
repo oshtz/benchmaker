@@ -64,19 +64,9 @@ function createDownloadServices({
       events.push('platform')
       return os
     },
-    createUpdateDir: async () => {
-      events.push('mkdir')
-    },
-    writeBinaryFile: async (relativePath, contents) => {
-      events.push(`write:${relativePath}:${contents.length}`)
-    },
-    getAppLocalDataDir: async () => {
-      events.push('app-data')
-      return 'C:/Users/USER/AppData/Local/com.benchmaker.app'
-    },
-    joinPath: async (...paths) => {
-      events.push(`join:${paths.join('|')}`)
-      return paths.join('/')
+    writeUpdateFile: async (fileName, contents) => {
+      events.push(`write:${fileName}:${contents.length}`)
+      return `C:/Users/USER/AppData/Local/com.benchmaker.app/benchmaker-updates/${fileName}`
     },
     extractAppZip: async (zipPath) => {
       events.push(`extract:${zipPath}`)
@@ -188,10 +178,7 @@ describe('updater helpers', () => {
       'download:https://example.test/Benchmaker-Portable.exe',
       'checksum:https://example.test/Benchmaker-Portable.exe.sha256',
       'platform',
-      'mkdir',
-      'app-data',
-      'join:C:/Users/USER/AppData/Local/com.benchmaker.app|benchmaker-updates|Benchmaker-0.1.5.exe',
-      'write:benchmaker-updates/Benchmaker-0.1.5.exe:17',
+      'write:Benchmaker-0.1.5.exe:17',
     ])
   })
 

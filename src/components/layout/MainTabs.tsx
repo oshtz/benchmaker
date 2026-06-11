@@ -19,9 +19,9 @@ const tabs = [
 
 export function MainTabsList({ className }: { className?: string }) {
   return (
-    <TabsList className={cn("inline-flex gap-2 bg-black/10 dark:bg-black/30 border border-border/40 p-2 px-3 sm:px-4 rounded-2xl backdrop-blur-xl shadow-inner overflow-x-auto max-w-full scrollbar-hidden", className)}>
+    <TabsList className={cn("inline-flex max-w-full justify-start gap-1 overflow-x-auto rounded-xl border border-border/40 bg-black/10 p-1.5 px-2 shadow-inner backdrop-blur-xl scrollbar-hidden dark:bg-black/30 sm:gap-2 sm:rounded-2xl sm:p-2 sm:px-3 lg:px-4", className)}>
       {tabs.map(({ value, label, Icon }) => (
-        <TabsTrigger key={value} value={value} className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 text-muted-foreground hover:text-foreground data-[state=active]:bg-background/60 data-[state=active]:text-foreground data-[state=active]:shadow-sm whitespace-nowrap shrink-0">
+        <TabsTrigger key={value} value={value} aria-label={label} className="group flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-muted-foreground transition-all duration-200 hover:text-foreground data-[state=active]:bg-background/60 data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:rounded-xl sm:px-4">
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-data-[state=active]:text-primary" />
           <span className="hidden sm:inline font-semibold">{label}</span>
         </TabsTrigger>

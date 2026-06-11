@@ -12,7 +12,7 @@ test('renders the app shell and empty benchmark state', async ({ page }) => {
 test('opens update status dialog and degrades cleanly outside Tauri', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('button', { name: /v--/ }).click()
+  await page.getByRole('button', { name: /About Benchmaker/i }).click()
 
   await expect(page.getByRole('dialog', { name: /About Benchmaker/i })).toBeVisible()
   await expect(page.getByText('Version and update status')).toBeVisible()

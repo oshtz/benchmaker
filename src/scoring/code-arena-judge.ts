@@ -1,5 +1,6 @@
 import type { ScoringResult } from '@/types'
 import { getOpenRouterClient } from '@/services/openrouter'
+import { isAbortError, throwIfAborted } from '@/services/abort'
 
 type OpenRouterClient = ReturnType<typeof getOpenRouterClient>
 
@@ -36,7 +37,8 @@ export async function scoreCodeArenaOutput(
   prompt: string,
   code: string,
   client: OpenRouterClient,
-  judgeModelId: string
+  judgeModelId: string,
+  signal?: AbortSignal
 ): Promise<ScoringResult> {
   if (!code || code.trim().length === 0) {
     return {
@@ -46,27 +48,32 @@ export async function scoreCodeArenaOutput(
   }
 
   try {
+    if (signal) throwIfAborted(signal)
+
     const judgePrompt = CODE_ARENA_JUDGE_PROMPT
       .replace('{prompt}', prompt)
       .replace('{code}', code)
 
-    const response = await client.createChatCompletion({
-      model: judgeModelId,
-      messages: [
-        {
-          role: 'user',
-          content: judgePrompt,
-        },
-      ],
-      temperature: 0.3, // Lower temperature for more consistent scoring
-      max_tokens: 500,
-    })
+    const response = await client.createChatCompletion(
+      {
+        model: judgeModelId,
+        messages: [
+          {
+            role: 'user',
+            content: judgePrompt,
+          },
+        ],
+        temperature: 0.3, // Lower temperature for more consistent scoring
+        max_tokens: 500,
+      },
+      { signal }
+    )
 
     const content = response.choices[0]?.message?.content || ''
     
     // Parse the response
-    const scoreMatch = content.match(/SCORE[\s*"':=\-]*(\d+)/i)
-    const explanationMatch = content.match(/EXPLANATION[\s*"':=\-]*(.+)/is)
+    const scoreMatch = content.match(/SCORE[\s*"':=-]*(\d+)/i)
+    const explanationMatch = content.match(/EXPLANATION[\s*"':=-]*(.+)/is)
 
     if (!scoreMatch) {
       // Try to find any number in the response as a fallback
@@ -91,7 +98,7 @@ export async function scoreCodeArenaOutput(
     const rawScore = Math.min(100, Math.max(0, parseInt(scoreMatch[1], 10)))
     const explanation = explanationMatch 
       ? explanationMatch[1].trim() 
-      : content.replace(/SCORE[\s*"':=\-]*\d+/i, '').trim()
+      : content.replace(/SCORE[\s*"':=-]*\d+/i, '').trim()
 
     return {
       score: rawScore / 100,
@@ -100,6 +107,8 @@ export async function scoreCodeArenaOutput(
       notes: explanation,
     }
   } catch (error) {
+    if (isAbortError(error)) throw error
+
     console.error('Failed to score with LLM judge:', error)
     return {
       score: 0,
@@ -126,7 +135,8 @@ export async function quickScoreCodeArenaOutput(
   prompt: string,
   code: string,
   client: OpenRouterClient,
-  judgeModelId: string
+  judgeModelId: string,
+  signal?: AbortSignal
 ): Promise<ScoringResult> {
   if (!code || code.trim().length === 0) {
     return {
@@ -139,21 +149,26 @@ export async function quickScoreCodeArenaOutput(
   const truncatedCode = wasTruncated ? code.slice(0, QUICK_SCORE_CODE_LIMIT) : code
 
   try {
+    if (signal) throwIfAborted(signal)
+
     const judgePrompt = SIMPLE_JUDGE_PROMPT
       .replace('{prompt}', prompt)
       .replace('{code}', truncatedCode)
 
-    const response = await client.createChatCompletion({
-      model: judgeModelId,
-      messages: [
-        {
-          role: 'user',
-          content: judgePrompt,
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 50,
-    })
+    const response = await client.createChatCompletion(
+      {
+        model: judgeModelId,
+        messages: [
+          {
+            role: 'user',
+            content: judgePrompt,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 50,
+      },
+      { signal }
+    )
 
     const content = response.choices[0]?.message?.content || ''
     const scoreMatch = content.match(/\b(\d{1,3})\b/)
@@ -179,6 +194,8 @@ export async function quickScoreCodeArenaOutput(
       notes: `Quick evaluation${truncationWarning}`,
     }
   } catch (error) {
+    if (isAbortError(error)) throw error
+
     console.error('Failed quick score:', error)
     return {
       score: 0,

@@ -1,9 +1,10 @@
-import { useCallback, useMemo } from 'react'
-import Editor from '@monaco-editor/react'
+import { Suspense, lazy, useCallback, useMemo } from 'react'
 import { useTestSuiteStore } from '@/stores/testSuiteStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { TestSuite } from '@/types'
 import { PromptEnhancerDialog } from './PromptEnhancerDialog'
+
+const MonacoEditor = lazy(() => import('@/components/ui/MonacoEditor'))
 
 interface SystemPromptEditorProps {
   testSuite: TestSuite
@@ -48,22 +49,32 @@ export function SystemPromptEditor({ testSuite }: SystemPromptEditorProps) {
         </div>
       </div>
       <div className="flex-1 min-h-0 p-0 overflow-hidden">
-        <Editor
-          height="100%"
-          defaultLanguage="markdown"
-          value={testSuite.systemPrompt}
-          onChange={handleChange}
-          theme={editorTheme}
-          options={{
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            wordWrap: 'on',
-            fontSize: 14,
-            padding: { top: 16, bottom: 16 },
-            scrollBeyondLastLine: false,
-          }}
-        />
+        <Suspense fallback={<EditorFallback />}>
+          <MonacoEditor
+            height="100%"
+            defaultLanguage="markdown"
+            value={testSuite.systemPrompt}
+            onChange={handleChange}
+            theme={editorTheme}
+            options={{
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              wordWrap: 'on',
+              fontSize: 14,
+              padding: { top: 16, bottom: 16 },
+              scrollBeyondLastLine: false,
+            }}
+          />
+        </Suspense>
       </div>
+    </div>
+  )
+}
+
+function EditorFallback() {
+  return (
+    <div className="flex h-full items-center justify-center bg-muted/20 text-sm text-muted-foreground">
+      Loading editor...
     </div>
   )
 }

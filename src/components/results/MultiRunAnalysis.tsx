@@ -23,12 +23,6 @@ export function MultiRunAnalysis({ currentRun }: MultiRunAnalysisProps) {
 
   const testSuite = testSuites.find((s) => s.id === currentRun.testSuiteId)
   const relatedRuns = getRunsForTestSuite(currentRun.testSuiteId)
-
-  // Only show if there are multiple completed runs
-  if (relatedRuns.length < 2) {
-    return null
-  }
-
   const runIds = relatedRuns.map((r) => r.id)
   const multiRunStats = getMultiRunStats(runIds, testSuite?.testCases)
 
@@ -47,6 +41,11 @@ export function MultiRunAnalysis({ currentRun }: MultiRunAnalysisProps) {
     if (sortedModels.length < 2) return null
     return compareModels(runIds, sortedModels[0], sortedModels[1], testSuite?.testCases) || null
   }, [runIds, sortedModels, testSuite?.testCases, compareModels])
+
+  // Only show if there are multiple completed runs
+  if (relatedRuns.length < 2) {
+    return null
+  }
 
   const formatScore = (score: number) => `${(score * 100).toFixed(1)}%`
   const formatCI = (ci: [number, number]) => 

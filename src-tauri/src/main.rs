@@ -793,8 +793,14 @@ fn save_run(app: AppHandle, run: RunResult) -> Result<(), String> {
         "INSERT INTO runs (id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
+           test_suite_id = excluded.test_suite_id,
+           test_suite_name = excluded.test_suite_name,
+           models = excluded.models,
+           parameters = excluded.parameters,
            status = excluded.status,
+           started_at = excluded.started_at,
            completed_at = excluded.completed_at,
+           judge_model = excluded.judge_model,
            error_count = excluded.error_count,
            error_summary = excluded.error_summary",
         params![
@@ -899,6 +905,38 @@ fn save_app_state(app: AppHandle, state: AppState) -> Result<(), String> {
         ],
     ).map_err(|err| err.to_string())?;
 
+    Ok(())
+}
+
+// ============================================================================
+// Tauri Commands - Code Arena Runs
+// ============================================================================
+
+#[tauri::command]
+fn get_all_code_arena_runs(app: AppHandle) -> Result<Vec<CodeArenaRun>, String> {
+    let conn = open_db(&app)?;
+    get_code_arena_runs_internal(&conn)
+}
+
+#[tauri::command]
+fn save_code_arena_run(app: AppHandle, run: CodeArenaRun) -> Result<(), String> {
+    let conn = open_db(&app)?;
+    let payload = serde_json::to_string(&run).map_err(|err| err.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO code_arena_runs (id, payload, started_at) VALUES (?, ?, ?)",
+        params![run.id, payload, run.started_at],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_code_arena_run(app: AppHandle, id: String) -> Result<(), String> {
+    let conn = open_db(&app)?;
+    conn.execute("DELETE FROM code_arena_runs WHERE id = ?", params![id])
+        .map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -1409,6 +1447,33 @@ mod tests {
     }
 
     #[test]
+    fn updater_rejects_nested_or_unexpected_archive_names() {
+        assert!(validate_update_archive_name("Benchmaker-0.1.6.exe").is_ok());
+        assert!(validate_update_archive_name("Benchmaker-0.1.6.app.zip").is_ok());
+        assert!(validate_update_archive_name("../Benchmaker.exe").is_err());
+        assert!(validate_update_archive_name("updates/Benchmaker.exe").is_err());
+        assert!(validate_update_archive_name("Benchmaker.zip").is_err());
+        assert!(validate_update_archive_name(".Benchmaker.exe").is_err());
+    }
+
+    #[test]
+    fn updater_rejects_install_sources_for_other_platforms() {
+        #[cfg(target_os = "windows")]
+        {
+            assert!(validate_install_source_name("Benchmaker.exe").is_ok());
+            assert!(validate_install_source_name("Benchmaker.app").is_err());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            assert!(validate_install_source_name("Benchmaker.app").is_ok());
+            assert!(validate_install_source_name("Benchmaker.exe").is_err());
+        }
+
+        assert!(validate_install_source_name("nested/Benchmaker.exe").is_err());
+    }
+
+    #[test]
     #[ignore]
     fn credential_store_round_trip_preserves_existing_openrouter_key() {
         let entry = openrouter_api_key_entry().expect("credential entry should be available");
@@ -1563,6 +1628,122 @@ mod tests {
 // Updater
 // ============================================================================
 
+const UPDATE_DIR_NAME: &str = "benchmaker-updates";
+
+fn update_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let data_dir = app
+        .path_resolver()
+        .app_local_data_dir()
+        .ok_or("Could not resolve app local data directory")?;
+    Ok(data_dir.join(UPDATE_DIR_NAME))
+}
+
+fn validate_update_archive_name(file_name: &str) -> Result<(), String> {
+    if file_name.trim().is_empty()
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.starts_with('.')
+    {
+        return Err("Invalid update file name.".to_string());
+    }
+
+    let lower = file_name.to_ascii_lowercase();
+    if !(lower.ends_with(".exe") || lower.ends_with(".app.zip")) {
+        return Err("Unsupported update file type.".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_install_source_name(file_name: &str) -> Result<(), String> {
+    if file_name.trim().is_empty()
+        || file_name.contains('/')
+        || file_name.contains('\\')
+        || file_name.starts_with('.')
+    {
+        return Err("Invalid update source name.".to_string());
+    }
+
+    let lower = file_name.to_ascii_lowercase();
+
+    #[cfg(target_os = "windows")]
+    {
+        if lower.ends_with(".exe") {
+            return Ok(());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if lower.ends_with(".app") {
+            return Ok(());
+        }
+    }
+
+    Err("Unsupported update source type.".to_string())
+}
+
+fn canonical_update_source(app: &AppHandle, update_path: &str) -> Result<PathBuf, String> {
+    let update_root = update_dir(app)?;
+    let canonical_root = fs::canonicalize(&update_root).map_err(|err| err.to_string())?;
+    let canonical_source = fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
+
+    if !canonical_source.starts_with(&canonical_root) {
+        return Err("Update source must be inside the app update directory.".to_string());
+    }
+
+    let file_name = canonical_source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("Invalid update source path")?;
+    validate_install_source_name(file_name)?;
+
+    Ok(canonical_source)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn canonical_update_archive(app: &AppHandle, update_path: &str) -> Result<PathBuf, String> {
+    let update_root = update_dir(app)?;
+    let canonical_root = fs::canonicalize(&update_root).map_err(|err| err.to_string())?;
+    let canonical_archive = fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
+
+    if !canonical_archive.starts_with(&canonical_root) {
+        return Err("Update archive must be inside the app update directory.".to_string());
+    }
+
+    let file_name = canonical_archive
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("Invalid update archive path")?;
+    validate_update_archive_name(file_name)?;
+
+    Ok(canonical_archive)
+}
+
+#[tauri::command]
+fn get_update_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "windows") {
+        "win32"
+    } else {
+        "linux"
+    }
+}
+
+#[tauri::command]
+fn write_update_file(app: AppHandle, file_name: String, contents: Vec<u8>) -> Result<String, String> {
+    validate_update_archive_name(&file_name)?;
+
+    let update_root = update_dir(&app)?;
+    fs::create_dir_all(&update_root).map_err(|err| err.to_string())?;
+
+    let update_file = update_root.join(file_name);
+    fs::write(&update_file, contents).map_err(|err| err.to_string())?;
+
+    Ok(update_file.to_string_lossy().to_string())
+}
+
 #[cfg(target_os = "windows")]
 fn escape_powershell_literal(value: &str) -> String {
     value.replace('\'', "''")
@@ -1579,10 +1760,7 @@ fn apply_update(app: AppHandle, update_path: String) -> Result<(), String> {
         return Err("Auto-update is disabled in dev builds.".to_string());
     }
 
-    let update_file = Path::new(&update_path);
-    if !update_file.exists() {
-        return Err("Update file not found.".to_string());
-    }
+    let update_file = canonical_update_source(&app, &update_path)?;
 
     let current_exe = std::env::current_exe().map_err(|err| err.to_string())?;
     let pid = std::process::id();
@@ -1644,13 +1822,17 @@ fn apply_update(app: AppHandle, update_path: String) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-fn extract_app_zip(zip_path: String) -> Result<String, String> {
-    let zip_file = Path::new(&zip_path);
+fn extract_app_zip(app: AppHandle, zip_path: String) -> Result<String, String> {
+    let zip_file = canonical_update_archive(&app, &zip_path)?;
     let parent = zip_file.parent().ok_or("Invalid zip path")?;
 
     // Use ditto to extract (preserves macOS attributes and code signatures)
     let status = Command::new("ditto")
-        .args(["-xk", &zip_path, &parent.to_string_lossy().to_string()])
+        .args([
+            "-xk",
+            &zip_file.to_string_lossy().to_string(),
+            &parent.to_string_lossy().to_string(),
+        ])
         .status()
         .map_err(|e| e.to_string())?;
 
@@ -1695,11 +1877,16 @@ fn main() {
             delete_run,
             get_app_state,
             save_app_state,
+            get_all_code_arena_runs,
+            save_code_arena_run,
+            delete_code_arena_run,
             // Credential storage
             get_stored_api_key,
             save_api_key,
             clear_stored_api_key,
             // Updater commands
+            get_update_platform,
+            write_update_file,
             apply_update,
             extract_app_zip,
         ])
