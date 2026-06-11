@@ -318,6 +318,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NODE_OPTIONS: --max-old-space-size=4096
           RUST_LOG: tauri_bundler=debug
           RUST_BACKTRACE: 1
         run: npm run tauri:build -- --bundles app,dmg
