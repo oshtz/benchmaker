@@ -10,10 +10,87 @@ import {
 } from '@/components/ui/collapsible'
 import { useRunStore, type ModelComparison } from '@/stores/runStore'
 import { useTestSuiteStore } from '@/stores/testSuiteStore'
-import type { RunResult } from '@/types'
+import type { MultiRunStats, RunResult } from '@/types'
 
 interface MultiRunAnalysisProps {
   currentRun: RunResult
+}
+
+function formatScore(score: number) {
+  return `${(score * 100).toFixed(1)}%`
+}
+
+function formatCI(ci: [number, number]) {
+  return `[${(ci[0] * 100).toFixed(1)}, ${(ci[1] * 100).toFixed(1)}]`
+}
+
+function MultiRunIntervalChart({
+  models,
+  stats,
+}: {
+  models: string[]
+  stats: Map<string, MultiRunStats>
+}) {
+  const rows = models
+    .map((modelId) => {
+      const modelStats = stats.get(modelId)
+      return modelStats ? { modelId, stats: modelStats } : null
+    })
+    .filter((row): row is { modelId: string; stats: MultiRunStats } => row !== null)
+
+  if (rows.length < 2) return null
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h4 className="text-xs font-medium">Mean score with 95% CI</h4>
+        <span className="text-[10px] text-muted-foreground">0-100%</span>
+      </div>
+      <div className="space-y-3">
+        {rows.map(({ modelId, stats: modelStats }, index) => {
+          const low = Math.max(0, Math.min(1, modelStats.confidence95[0]))
+          const high = Math.max(0, Math.min(1, modelStats.confidence95[1]))
+          const mean = Math.max(0, Math.min(1, modelStats.mean))
+
+          return (
+            <div
+              key={modelId}
+              className="grid grid-cols-[minmax(110px,1fr)_minmax(160px,2fr)_64px] items-center gap-3 text-xs"
+              aria-label={`${modelId} mean ${formatScore(mean)} 95 percent confidence interval ${formatCI(modelStats.confidence95)}`}
+            >
+              <div className="truncate font-mono" title={modelId}>
+                {index === 0 && <TrendingUp className="h-3 w-3 inline mr-1 text-emerald-600" />}
+                {modelId.split('/').pop()}
+              </div>
+              <div className="relative h-6">
+                <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-border" />
+                <div
+                  className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/30"
+                  style={{
+                    left: `${low * 100}%`,
+                    width: `${Math.max(1, (high - low) * 100)}%`,
+                  }}
+                />
+                <div
+                  className={index === 0
+                    ? 'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background'
+                    : 'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70 ring-2 ring-background'}
+                  style={{ left: `${mean * 100}%` }}
+                />
+              </div>
+              <div className="text-right font-mono font-semibold">
+                {formatScore(mean)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
+        <span>Lower score</span>
+        <span>Higher score</span>
+      </div>
+    </div>
+  )
 }
 
 export function MultiRunAnalysis({ currentRun }: MultiRunAnalysisProps) {
@@ -47,10 +124,6 @@ export function MultiRunAnalysis({ currentRun }: MultiRunAnalysisProps) {
     return null
   }
 
-  const formatScore = (score: number) => `${(score * 100).toFixed(1)}%`
-  const formatCI = (ci: [number, number]) => 
-    `[${(ci[0] * 100).toFixed(1)}, ${(ci[1] * 100).toFixed(1)}]`
-
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <Card className="border-dashed">
@@ -74,6 +147,8 @@ export function MultiRunAnalysis({ currentRun }: MultiRunAnalysisProps) {
         <CollapsibleContent>
           <CardContent className="pt-0">
             <div className="space-y-4">
+              <MultiRunIntervalChart models={sortedModels} stats={multiRunStats} />
+
               {/* Model Statistics Table */}
               <div className="rounded-lg border overflow-hidden">
                 <table className="w-full text-sm">

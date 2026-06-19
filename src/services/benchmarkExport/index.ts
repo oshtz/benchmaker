@@ -1,6 +1,5 @@
 export { buildBenchmarkExportDocument, calculateModelRows } from './metrics'
 export { generateScientificHtml } from './htmlReport'
-export { generateScientificPdf } from './pdfReport'
 export { generateShareImagePng, generateShareImageSvg, getShareImageSize } from './socialImage'
 export {
   buildScientificFilename,
@@ -12,6 +11,8 @@ export type {
   BenchmarkExportDocument,
   BenchmarkExportOptions,
   ExportMode,
-  ScientificExportFormat,
   ShareImagePreset,
+  ShareImageTemplate,
+  ShareImageTheme,
+  ShareImageVariant,
 } from './types'

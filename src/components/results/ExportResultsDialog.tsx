@@ -26,15 +26,16 @@ import {
   buildScientificFilename,
   buildShareImageFilename,
   generateScientificHtml,
-  generateScientificPdf,
   generateShareImagePng,
   generateShareImageSvg,
   getShareImageSize,
   saveExportArtifact,
   type BenchmarkExportOptions,
   type ExportMode,
-  type ScientificExportFormat,
   type ShareImagePreset,
+  type ShareImageTemplate,
+  type ShareImageTheme,
+  type ShareImageVariant,
 } from '@/services/benchmarkExport'
 import type { RunResult, TestSuite } from '@/types'
 
@@ -48,8 +49,10 @@ interface ExportResultsDialogProps {
 
 const DEFAULT_OPTIONS: BenchmarkExportOptions = {
   mode: 'scientific',
-  scientificFormat: 'html',
   imagePreset: 'square',
+  imageTemplate: 'classic',
+  imageVariant: 'leaderboard',
+  imageTheme: 'dark',
   includeRawResponses: true,
   includeExpectedOutputs: true,
   includeSystemPrompt: false,
@@ -132,31 +135,15 @@ export function ExportResultsDialog({
     setIsExporting(true)
     try {
       if (options.mode === 'scientific') {
-        if (options.scientificFormat === 'html') {
-          const html = generateScientificHtml(exportDocument)
-          const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-          const result = await saveExportArtifact({
-            blob,
-            filename: buildScientificFilename(exportDocument, 'html'),
-            extension: 'html',
-          })
-          if (!result.cancelled) {
-            toast({ title: 'Report exported', description: result.savedPath || 'HTML report downloaded.' })
-          }
-          return
-        }
-
-        const pdf = generateScientificPdf(exportDocument)
-        const pdfBuffer = new ArrayBuffer(pdf.byteLength)
-        new Uint8Array(pdfBuffer).set(pdf)
-        const blob = new Blob([pdfBuffer], { type: 'application/pdf' })
+        const html = generateScientificHtml(exportDocument)
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
         const result = await saveExportArtifact({
           blob,
-          filename: buildScientificFilename(exportDocument, 'pdf'),
-          extension: 'pdf',
+          filename: buildScientificFilename(exportDocument),
+          extension: 'html',
         })
         if (!result.cancelled) {
-          toast({ title: 'Report exported', description: result.savedPath || 'PDF report downloaded.' })
+          toast({ title: 'Report exported', description: result.savedPath || 'HTML report downloaded.' })
         }
         return
       }
@@ -190,7 +177,7 @@ export function ExportResultsDialog({
         <DialogHeader>
           <DialogTitle>Export Benchmark Results</DialogTitle>
           <DialogDescription>
-            Create a detailed scientific report or a compact share image for this run.
+            Create a detailed HTML report or a compact share image for this run.
           </DialogDescription>
         </DialogHeader>
 
@@ -211,22 +198,6 @@ export function ExportResultsDialog({
 
             {options.mode === 'scientific' ? (
               <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>Report Format</Label>
-                  <Select
-                    value={options.scientificFormat}
-                    onValueChange={(value) => updateOption('scientificFormat', value as ScientificExportFormat)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="html">HTML report</SelectItem>
-                      <SelectItem value="pdf">PDF report</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <OptionRow
                   id="include-raw-responses"
                   label="Raw responses"
@@ -280,6 +251,22 @@ export function ExportResultsDialog({
             ) : (
               <div className="space-y-3">
                 <div className="space-y-2">
+                  <Label>Image Template</Label>
+                  <Select
+                    value={options.imageTemplate}
+                    onValueChange={(value) => updateOption('imageTemplate', value as ShareImageTemplate)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="classic">Classic result card</SelectItem>
+                      <SelectItem value="social-card">Social card reference</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Image Size</Label>
                   <Select
                     value={options.imagePreset}
@@ -291,10 +278,50 @@ export function ExportResultsDialog({
                     <SelectContent>
                       <SelectItem value="square">Square 1080 x 1080</SelectItem>
                       <SelectItem value="portrait">Portrait 1080 x 1350</SelectItem>
+                      <SelectItem value="story">Story / Reel 1080 x 1920</SelectItem>
                       <SelectItem value="wide">Wide 1600 x 900</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {options.imageTemplate === 'social-card' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Card Layout</Label>
+                      <Select
+                        value={options.imageVariant}
+                        onValueChange={(value) => updateOption('imageVariant', value as ShareImageVariant)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="leaderboard">Leaderboard</SelectItem>
+                          <SelectItem value="bars">Bar chart</SelectItem>
+                          <SelectItem value="hero">Hero stat</SelectItem>
+                          <SelectItem value="h2h">Head-to-head</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Theme</Label>
+                      <Select
+                        value={options.imageTheme}
+                        onValueChange={(value) => updateOption('imageTheme', value as ShareImageTheme)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="dark">Dark</SelectItem>
+                          <SelectItem value="light">Light</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+
                 <OptionRow
                   id="anonymize-image"
                   label="Anonymize model names"
@@ -415,7 +442,7 @@ export function ExportResultsDialog({
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Export {options.mode === 'scientific' ? options.scientificFormat.toUpperCase() : 'PNG'}
+            Export {options.mode === 'scientific' ? 'HTML' : 'PNG'}
           </Button>
         </DialogFooter>
       </DialogContent>

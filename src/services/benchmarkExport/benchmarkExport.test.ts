@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBenchmarkExportDocument,
   generateScientificHtml,
-  generateScientificPdf,
   generateShareImageSvg,
 } from '.'
 import type { BenchmarkExportOptions } from './types'
@@ -10,8 +9,10 @@ import type { RunResult, TestSuite } from '@/types'
 
 const options: BenchmarkExportOptions = {
   mode: 'scientific',
-  scientificFormat: 'html',
   imagePreset: 'square',
+  imageTemplate: 'classic',
+  imageVariant: 'leaderboard',
+  imageTheme: 'dark',
   includeRawResponses: true,
   includeExpectedOutputs: true,
   includeSystemPrompt: false,
@@ -141,7 +142,7 @@ describe('benchmark export document', () => {
     expect(html).not.toContain('<script>alert(1)</script>')
   })
 
-  it('creates a direct PDF payload', () => {
+  it('uses the branded report layout for HTML exports', () => {
     const document = buildBenchmarkExportDocument({
       run,
       testSuites: [suite],
@@ -150,10 +151,12 @@ describe('benchmark export document', () => {
       generatedAt: 10_000,
     })
 
-    const pdf = generateScientificPdf(document)
-    const header = new TextDecoder().decode(pdf.slice(0, 8))
+    const html = generateScientificHtml(document)
 
-    expect(header).toBe('%PDF-1.4')
+    expect(html).toContain('class="app-icon"')
+    expect(html).toContain('class="accent-rule"')
+    expect(html).toContain('linear-gradient(90deg, var(--accent), var(--accent-2))')
+    expect(html).toContain('class="leader-row"')
   })
 
   it('keeps share images prompt-free and supports anonymized labels', () => {
@@ -170,5 +173,29 @@ describe('benchmark export document', () => {
     expect(svg).toContain('Model 1')
     expect(svg).not.toContain('What is 2 + 2?')
     expect(svg).not.toContain('provider/model-a')
+  })
+
+  it('generates reference-style social cards', () => {
+    const document = buildBenchmarkExportDocument({
+      run,
+      testSuites: [suite],
+      allRuns: [run],
+      options: {
+        ...options,
+        mode: 'share-image',
+        imagePreset: 'story',
+        imageTemplate: 'social-card',
+        imageVariant: 'h2h',
+        imageTheme: 'light',
+      },
+      generatedAt: 10_000,
+    })
+
+    const svg = generateShareImageSvg(document)
+
+    expect(svg).toContain('width="1080" height="1920"')
+    expect(svg).toContain('HEAD TO HEAD')
+    expect(svg).toContain('MATH &lt;SUITE&gt;')
+    expect(svg).not.toContain('What is 2 + 2?')
   })
 })

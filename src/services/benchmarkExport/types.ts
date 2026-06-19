@@ -10,13 +10,17 @@ import type {
 } from '@/types'
 
 export type ExportMode = 'scientific' | 'share-image'
-export type ScientificExportFormat = 'html' | 'pdf'
-export type ShareImagePreset = 'square' | 'portrait' | 'wide'
+export type ShareImagePreset = 'square' | 'portrait' | 'story' | 'wide'
+export type ShareImageTemplate = 'classic' | 'social-card'
+export type ShareImageVariant = 'leaderboard' | 'bars' | 'hero' | 'h2h'
+export type ShareImageTheme = 'dark' | 'light'
 
 export interface BenchmarkExportOptions {
   mode: ExportMode
-  scientificFormat: ScientificExportFormat
   imagePreset: ShareImagePreset
+  imageTemplate: ShareImageTemplate
+  imageVariant: ShareImageVariant
+  imageTheme: ShareImageTheme
   includeRawResponses: boolean
   includeExpectedOutputs: boolean
   includeSystemPrompt: boolean

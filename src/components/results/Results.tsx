@@ -18,6 +18,7 @@ import { ComparisonGrid } from './ComparisonGrid'
 import { ReportSummary } from './ReportSummary'
 import { MultiRunAnalysis } from './MultiRunAnalysis'
 import { ExportResultsDialog } from './ExportResultsDialog'
+import { BenchmarkCharts } from './BenchmarkCharts'
 
 export function Results() {
   const { runs, currentRunId, setCurrentRun, deleteRun } = useRunStore()
@@ -27,6 +28,10 @@ export function Results() {
   const { apiKey } = useSettingsStore()
 
   const currentRun = runs.find((r) => r.id === currentRunId)
+  const currentTestSuite = currentRun
+    ? testSuites.find((suite) => suite.id === currentRun.testSuiteId)
+    : undefined
+  const currentTestCases = currentTestSuite?.testCases || currentRun?.testSuiteSnapshot?.testCases || []
 
   const hasApiKey = Boolean(apiKey)
   const hasTestSuites = testSuites.length > 0
@@ -137,6 +142,7 @@ export function Results() {
               <div className="shrink-0">
                 <ReportSummary run={currentRun} />
               </div>
+              <BenchmarkCharts run={currentRun} testCases={currentTestCases} />
               <div className="shrink-0">
                 <MultiRunAnalysis currentRun={currentRun} />
               </div>

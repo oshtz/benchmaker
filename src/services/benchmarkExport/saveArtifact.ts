@@ -1,10 +1,10 @@
-import type { BenchmarkExportDocument, ScientificExportFormat, ShareImagePreset } from './types'
+import type { BenchmarkExportDocument, ShareImagePreset } from './types'
 import { isoDateForFilename, slugifyFilenamePart } from './formatters'
 
 export interface ExportArtifact {
   blob: Blob
   filename: string
-  extension: 'html' | 'pdf' | 'png'
+  extension: 'html' | 'png'
 }
 
 function isTauriRuntime(): boolean {
@@ -47,13 +47,10 @@ export async function saveExportArtifact(artifact: ExportArtifact): Promise<{ sa
   return { cancelled: false }
 }
 
-export function buildScientificFilename(
-  document: BenchmarkExportDocument,
-  format: ScientificExportFormat,
-): string {
+export function buildScientificFilename(document: BenchmarkExportDocument): string {
   const date = isoDateForFilename(document.run.startedAt || document.generatedAt)
   const suite = slugifyFilenamePart(document.suite.name)
-  return `benchmaker-${suite}-${date}.${format}`
+  return `benchmaker-${suite}-${date}.html`
 }
 
 export function buildShareImageFilename(
@@ -62,5 +59,8 @@ export function buildShareImageFilename(
 ): string {
   const date = isoDateForFilename(document.run.startedAt || document.generatedAt)
   const suite = slugifyFilenamePart(document.suite.name)
-  return `benchmaker-${suite}-${preset}-${date}.png`
+  const style = document.options.imageTemplate === 'social-card'
+    ? `social-${document.options.imageVariant}-${document.options.imageTheme}`
+    : 'classic'
+  return `benchmaker-${suite}-${preset}-${style}-${date}.png`
 }

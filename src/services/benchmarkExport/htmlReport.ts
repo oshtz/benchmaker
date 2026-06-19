@@ -1,4 +1,5 @@
 import type { BenchmarkExportDocument, ModelExportRow, TestCaseExportRow } from './types'
+import appIconUrl from '/src-tauri/icons/128x128.png?inline'
 import {
   escapeHtml,
   formatCost,
@@ -27,6 +28,15 @@ function renderKpi(label: string, value: string, note?: string): string {
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
       ${note ? `<small>${escapeHtml(note)}</small>` : ''}
+    </div>
+  `
+}
+
+function renderCoverKpi(label: string, value: string): string {
+  return `
+    <div class="cover-kpi">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
     </div>
   `
 }
@@ -61,7 +71,7 @@ function renderModelTable(rows: ModelExportRow[], includeCostTokens: boolean): s
           </thead>
           <tbody>
             ${rows.map((row) => `
-              <tr>
+              <tr class="${row.rank === 1 ? 'leader-row' : ''}">
                 <td class="rank">${row.rank}</td>
                 <td>
                   <strong>${escapeHtml(row.displayName)}</strong>
@@ -256,6 +266,7 @@ function renderRawResponses(document: BenchmarkExportDocument): string {
 
 export function generateScientificHtml(document: BenchmarkExportDocument): string {
   const topModel = document.summary.topModel
+  const appIcon = escapeHtml(appIconUrl)
 
   return `<!doctype html>
 <html lang="en">
@@ -266,72 +277,179 @@ export function generateScientificHtml(document: BenchmarkExportDocument): strin
   <style>
     :root {
       color-scheme: light;
-      --ink: #141414;
-      --muted: #666;
-      --line: #dadada;
-      --panel: #f7f7f7;
-      --accent: #df4b91;
-      --accent-2: #f18a32;
-      --good: #0c8a53;
+      --bg: #eee8de;
+      --paper: #fff9ee;
+      --paper-2: #f6efe4;
+      --ink: #11100f;
+      --muted: #62594f;
+      --faint: #9b9083;
+      --line: rgba(17, 16, 15, .16);
+      --panel: #fff9ee;
+      --panel-strong: #e2d8c9;
+      --dark: #090909;
+      --dark-panel: #141312;
+      --dark-text: #f8f0e4;
+      --accent: #E8549C;
+      --accent-2: #F28E2B;
+      --good: #087f5b;
       --warn: #a65f00;
+      --error: #b42318;
+      --track: #cec3b5;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       color: var(--ink);
-      background: #fff;
+      background:
+        linear-gradient(rgba(17, 16, 15, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(17, 16, 15, .055) 1px, transparent 1px),
+        var(--bg);
+      background-size: 42px 42px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       line-height: 1.45;
     }
-    main { max-width: 1180px; margin: 0 auto; padding: 40px 28px 80px; }
-    header.cover {
-      border-bottom: 4px solid var(--ink);
-      padding-bottom: 28px;
-      margin-bottom: 28px;
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .26;
+      background-image:
+        repeating-linear-gradient(0deg, rgba(255,255,255,.22) 0 1px, transparent 1px 3px),
+        repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 1px, transparent 1px 4px);
+      mix-blend-mode: soft-light;
     }
-    .brand { color: var(--accent); font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
-    h1 { font-size: 40px; margin: 10px 0 12px; letter-spacing: -.04em; line-height: 1.05; }
-    h2 { font-size: 22px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-top: 36px; }
-    h3 { font-size: 16px; margin: 16px 0 8px; }
+    main { max-width: 1180px; margin: 0 auto; padding: 34px 28px 80px; position: relative; }
+    header.cover {
+      position: relative;
+      overflow: hidden;
+      color: var(--dark-text);
+      background:
+        linear-gradient(rgba(248, 240, 228, .06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(248, 240, 228, .06) 1px, transparent 1px),
+        var(--dark);
+      background-size: 42px 42px;
+      border: 1px solid rgba(248, 240, 228, .18);
+      border-radius: 22px;
+      padding: 28px;
+      margin-bottom: 30px;
+      box-shadow: 0 20px 70px rgba(17, 16, 15, .18);
+    }
+    header.cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(248, 240, 228, .08), transparent 38%);
+    }
+    .brand-row, .cover-body, .cover-kpis, .meta, .accent-rule { position: relative; z-index: 1; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand-lockup { display: flex; align-items: center; gap: 14px; }
+    .app-icon { width: 46px; height: 46px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(248, 240, 228, .22); }
+    .brand { color: var(--accent); font-weight: 900; text-transform: uppercase; letter-spacing: .18em; font-size: 12px; }
+    .brand-subtitle, .format-pill { color: var(--faint); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
+    .format-pill { border: 1px solid rgba(248, 240, 228, .22); border-radius: 999px; padding: 7px 10px; color: var(--dark-text); }
+    .accent-rule { height: 7px; margin: 24px 0 28px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .cover-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; align-items: end; }
+    h1 { font-size: 44px; margin: 0 0 14px; letter-spacing: -.04em; line-height: 1.04; }
+    .cover-description { color: #c9bfb4; max-width: 780px; margin: 18px 0 0; }
+    .cover-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .cover-kpi {
+      border: 1px solid rgba(248, 240, 228, .14);
+      background: rgba(248, 240, 228, .045);
+      padding: 11px;
+    }
+    .cover-kpi span { display: block; color: #aaa197; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+    .cover-kpi strong { display: block; color: var(--dark-text); font-size: 17px; margin-top: 5px; letter-spacing: -.03em; }
+    h2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 22px;
+      margin: 38px 0 14px;
+      letter-spacing: -.03em;
+    }
+    h2::after { content: ""; height: 2px; flex: 1; background: linear-gradient(90deg, var(--accent), var(--accent-2), transparent); opacity: .75; }
+    h3 { font-size: 16px; margin: 16px 0 8px; letter-spacing: -.02em; }
     h4 { font-size: 12px; margin: 12px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
     p, li, td, th, dd, dt { font-size: 13px; }
     .muted, small { color: var(--muted); }
     small { display: block; margin-top: 2px; }
-    .meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; color: #aaa197; font-size: 12px; }
+    .meta span { border: 1px solid rgba(248, 240, 228, .16); background: rgba(248, 240, 228, .04); padding: 5px 8px; }
     .grid { display: grid; gap: 14px; }
     .grid.kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 24px 0; }
     .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .kpi, .panel, .callout {
       border: 1px solid var(--line);
       background: var(--panel);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 14px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.6);
+    }
+    .kpi { position: relative; overflow: hidden; min-height: 112px; }
+    .kpi::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 5px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
     }
     .kpi span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-    .kpi strong { display: block; font-size: 28px; margin-top: 4px; letter-spacing: -.04em; }
-    .callout { border-color: #e4b461; background: #fff7e8; }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .kpi strong { display: block; font-size: 27px; margin-top: 7px; letter-spacing: -.05em; line-height: 1.05; }
+    .callout { border-color: rgba(242, 142, 43, .5); background: #fff1dc; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
     table { border-collapse: collapse; width: 100%; min-width: 760px; }
     th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; background: #f2f2f2; }
+    th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; background: var(--panel-strong); }
     tr:last-child td { border-bottom: 0; }
-    .rank { font-weight: 800; font-size: 18px; }
-    .scorebar { height: 6px; background: #e8e8e8; border-radius: 99px; overflow: hidden; margin-top: 6px; }
-    .scorebar div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    tbody tr { background: var(--paper); }
+    tbody tr:nth-child(even) { background: var(--paper-2); }
+    .leader-row { background: #fff1e4; }
+    .leader-row td:first-child { color: var(--accent); }
+    .rank { font-weight: 900; font-size: 18px; letter-spacing: -.03em; }
+    .scorebar {
+      height: 9px;
+      background: var(--track);
+      border: 1px solid rgba(17, 16, 15, .08);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 7px;
+      width: min(220px, 100%);
+    }
+    .scorebar div {
+      position: relative;
+      height: 100%;
+      border-radius: inherit;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 35%, rgba(255,255,255,.35), transparent 27%),
+        radial-gradient(circle at 72% 40%, rgba(242,142,43,.9), transparent 31%),
+        linear-gradient(90deg, var(--accent), var(--accent-2) 52%, var(--accent));
+    }
+    .scorebar div::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: .16;
+      background:
+        repeating-linear-gradient(90deg, rgba(255,255,255,.55) 0 1px, transparent 1px 4px),
+        linear-gradient(180deg, rgba(255,255,255,.26), transparent 58%);
+    }
     dl { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; margin: 0; }
     dt { color: var(--muted); }
     dd { margin: 0; }
     pre {
       white-space: pre-wrap;
       word-break: break-word;
-      background: #111;
-      color: #f7f7f7;
-      border-radius: 8px;
+      background: var(--dark);
+      color: var(--dark-text);
+      border-radius: 10px;
       padding: 12px;
       font-size: 12px;
       overflow-x: auto;
     }
-    .testcase { border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin: 14px 0; page-break-inside: avoid; }
+    .testcase { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 14px 0; page-break-inside: avoid; background: var(--paper); }
     .testcase header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
     .testcase header div { display: flex; gap: 6px; flex-wrap: wrap; justify-content: end; }
     .testcase header span {
@@ -343,10 +461,13 @@ export function generateScientificHtml(document: BenchmarkExportDocument): strin
     }
     details { border-top: 1px solid var(--line); padding: 10px 0; }
     summary { cursor: pointer; font-weight: 700; }
-    .error { color: #b42318; }
+    .error { color: var(--error); }
     footer { margin-top: 40px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); padding-top: 16px; }
     @media print {
-      main { padding: 22mm 14mm; max-width: none; }
+      body { background: #fff; }
+      body::before { display: none; }
+      main { padding: 16mm 12mm; max-width: none; }
+      header.cover { box-shadow: none; break-inside: avoid; }
       .grid.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .table-wrap { overflow: visible; }
       table { min-width: 0; }
@@ -354,6 +475,8 @@ export function generateScientificHtml(document: BenchmarkExportDocument): strin
     }
     @media (max-width: 760px) {
       h1 { font-size: 30px; }
+      .cover-body { grid-template-columns: 1fr; }
+      .cover-kpis { grid-template-columns: 1fr 1fr; }
       .grid.kpis, .grid.two { grid-template-columns: 1fr; }
       main { padding: 24px 16px 56px; }
     }
@@ -362,15 +485,35 @@ export function generateScientificHtml(document: BenchmarkExportDocument): strin
 <body>
   <main>
     <header class="cover">
-      <div class="brand">Benchmaker Scientific Report</div>
-      <h1>${escapeHtml(document.suite.name)}</h1>
-      <div class="meta">
-        <span>Run started: ${formatDateTime(document.run.startedAt)}</span>
-        <span>Generated: ${formatDateTime(document.generatedAt)}</span>
-        <span>Status: ${escapeHtml(document.run.status)}</span>
-        <span>Suite source: ${escapeHtml(document.suite.source)}</span>
+      <div class="brand-row">
+        <div class="brand-lockup">
+          <img class="app-icon" src="${appIcon}" alt="" />
+          <div>
+            <div class="brand">Benchmaker</div>
+            <div class="brand-subtitle">Scientific Report</div>
+          </div>
+        </div>
+        <div class="format-pill">HTML Report</div>
       </div>
-      ${document.suite.description ? `<p>${escapeHtml(document.suite.description)}</p>` : ''}
+      <div class="accent-rule"></div>
+      <div class="cover-body">
+        <div>
+          <h1>${escapeHtml(document.suite.name)}</h1>
+          <div class="meta">
+            <span>Run started: ${formatDateTime(document.run.startedAt)}</span>
+            <span>Generated: ${formatDateTime(document.generatedAt)}</span>
+            <span>Status: ${escapeHtml(document.run.status)}</span>
+            <span>Suite source: ${escapeHtml(document.suite.source)}</span>
+          </div>
+          ${document.suite.description ? `<p class="cover-description">${escapeHtml(document.suite.description)}</p>` : ''}
+        </div>
+        <div class="cover-kpis">
+          ${renderCoverKpi('Top', topModel?.displayName || '-')}
+          ${renderCoverKpi('Score', topModel ? formatPercent(topModel.effectiveScore) : '-')}
+          ${renderCoverKpi('Coverage', formatPercent(document.summary.coverage, 0))}
+          ${renderCoverKpi('Duration', formatDuration(document.summary.durationMs))}
+        </div>
+      </div>
     </header>
 
     <section>
