@@ -57,6 +57,7 @@ tsconfig.tsbuildinfo
 
 # Testing
 coverage/
+test-results/
 .nyc_output/
 
 # Tauri specific
