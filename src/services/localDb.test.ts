@@ -44,7 +44,7 @@ const codeArenaRun: CodeArenaRun = {
 
 function db(overrides: Partial<BenchmakerDb> = {}): BenchmakerDb {
   return {
-    version: 3,
+    version: 4,
     updatedAt: 123,
     testSuites: [suite],
     runs: [run],
@@ -80,7 +80,7 @@ describe('normalizeSnapshot', () => {
 
   it('preserves Code Arena runs when present', () => {
     const normalized = normalizeSnapshot({
-      version: 3,
+      version: 4,
       updatedAt: 123,
       testSuites: [],
       runs: [],

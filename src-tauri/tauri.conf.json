@@ -19,6 +19,10 @@
         "unmaximize": true,
         "startDragging": true
       },
+      "dialog": {
+        "all": false,
+        "save": true
+      },
       "http": {
         "all": false,
         "request": true,

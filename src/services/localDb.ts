@@ -3,7 +3,7 @@ import { useTestSuiteStore } from '@/stores/testSuiteStore'
 import { useRunStore } from '@/stores/runStore'
 import { useCodeArenaRunStore } from '@/stores/codeArenaRunStore'
 
-const DB_VERSION = 3
+const DB_VERSION = 4
 const WRITE_THROTTLE_MS = 300
 
 let initialized = false

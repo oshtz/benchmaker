@@ -10,7 +10,7 @@ use tauri::AppHandle;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-const CURRENT_SCHEMA_VERSION: i64 = 3;
+const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 // ============================================================================
 // Data Types
@@ -46,6 +46,16 @@ pub struct TestSuite {
     pub test_cases: Vec<TestCase>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TestSuiteSnapshot {
+    pub name: String,
+    pub description: Option<String>,
+    pub system_prompt: String,
+    pub judge_system_prompt: Option<String>,
+    pub test_cases: Vec<TestCase>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -92,6 +102,7 @@ pub struct RunResult {
     pub id: String,
     pub test_suite_id: String,
     pub test_suite_name: String,
+    pub test_suite_snapshot: Option<TestSuiteSnapshot>,
     pub models: Vec<String>,
     pub parameters: ModelParameters,
     pub results: Vec<TestCaseResult>,
@@ -193,11 +204,16 @@ fn migrate_database(conn: &Connection) -> Result<(), String> {
             version INTEGER NOT NULL
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // Get current version
     let current_version: i64 = conn
-        .query_row("SELECT version FROM schema_version WHERE id = 1", [], |row| row.get(0))
+        .query_row(
+            "SELECT version FROM schema_version WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(|err| err.to_string())?
         .unwrap_or(0);
@@ -225,7 +241,8 @@ fn migrate_database(conn: &Connection) -> Result<(), String> {
             "INSERT INTO schema_version (id, version) VALUES (1, ?)
              ON CONFLICT(id) DO UPDATE SET version = excluded.version",
             params![CURRENT_SCHEMA_VERSION],
-        ).map_err(|err| err.to_string())?;
+        )
+        .map_err(|err| err.to_string())?;
     }
 
     Ok(())
@@ -244,7 +261,8 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             updated_at INTEGER NOT NULL
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // Test Cases table
     conn.execute(
@@ -262,7 +280,8 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             FOREIGN KEY (test_suite_id) REFERENCES test_suites(id) ON DELETE CASCADE
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // Runs table
     conn.execute(
@@ -270,6 +289,7 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             test_suite_id TEXT NOT NULL,
             test_suite_name TEXT NOT NULL,
+            test_suite_snapshot TEXT,
             models TEXT NOT NULL,
             parameters TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -280,7 +300,8 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             error_summary TEXT
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // Test Case Results table
     conn.execute(
@@ -302,7 +323,8 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // App State table (singleton)
     conn.execute(
@@ -313,7 +335,8 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             current_code_arena_run_id TEXT
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     // Code Arena runs are intentionally stored as versioned JSON payloads:
     // they are append-heavy, less queryable today, and must round-trip exactly.
@@ -324,10 +347,12 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
             started_at INTEGER NOT NULL
         )",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     ensure_column(conn, "runs", "error_count", "INTEGER")?;
     ensure_column(conn, "runs", "error_summary", "TEXT")?;
+    ensure_column(conn, "runs", "test_suite_snapshot", "TEXT")?;
     ensure_column(conn, "test_case_results", "prompt_tokens", "INTEGER")?;
     ensure_column(conn, "test_case_results", "completion_tokens", "INTEGER")?;
     ensure_column(conn, "test_case_results", "cost", "REAL")?;
@@ -343,17 +368,20 @@ fn create_normalized_tables(conn: &Connection) -> Result<(), String> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_test_cases_suite ON test_cases(test_suite_id)",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_results_run ON test_case_results(run_id)",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_runs_suite ON runs(test_suite_id)",
         [],
-    ).map_err(|err| err.to_string())?;
+    )
+    .map_err(|err| err.to_string())?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_code_arena_runs_started ON code_arena_runs(started_at DESC)",
@@ -383,7 +411,10 @@ fn ensure_column(
     }
 
     conn.execute(
-        &format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, column_name, column_type),
+        &format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            table_name, column_name, column_type
+        ),
         [],
     )
     .map_err(|err| err.to_string())?;
@@ -447,18 +478,22 @@ fn migrate_from_snapshot(conn: &Connection) -> Result<(), String> {
 
         // Migrate runs and results
         for run in &old_data.runs {
-            let models_json = serde_json::to_string(&run.models)
-                .unwrap_or_else(|_| "[]".to_string());
-            let params_json = serde_json::to_string(&run.parameters)
-                .unwrap_or_else(|_| "{}".to_string());
+            let models_json =
+                serde_json::to_string(&run.models).unwrap_or_else(|_| "[]".to_string());
+            let params_json =
+                serde_json::to_string(&run.parameters).unwrap_or_else(|_| "{}".to_string());
+            let test_suite_snapshot_json = run.test_suite_snapshot.as_ref().map(|snapshot| {
+                serde_json::to_string(snapshot).unwrap_or_else(|_| "null".to_string())
+            });
 
             conn.execute(
-                "INSERT OR REPLACE INTO runs (id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO runs (id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 params![
                     run.id,
                     run.test_suite_id,
                     run.test_suite_name,
+                    test_suite_snapshot_json,
                     models_json,
                     params_json,
                     run.status,
@@ -471,7 +506,9 @@ fn migrate_from_snapshot(conn: &Connection) -> Result<(), String> {
             ).map_err(|err| err.to_string())?;
 
             for result in &run.results {
-                let score_json = result.score.as_ref()
+                let score_json = result
+                    .score
+                    .as_ref()
                     .map(|s| serde_json::to_string(s).unwrap_or_else(|_| "null".to_string()));
 
                 conn.execute(
@@ -544,7 +581,8 @@ fn get_all_test_suites(app: AppHandle) -> Result<Vec<TestSuite>, String> {
 
     let mut suites = Vec::new();
     for row in suite_rows {
-        let (id, name, description, system_prompt, judge_system_prompt, created_at, updated_at) = row.map_err(|err| err.to_string())?;
+        let (id, name, description, system_prompt, judge_system_prompt, created_at, updated_at) =
+            row.map_err(|err| err.to_string())?;
 
         // Get test cases for this suite
         let test_cases = get_test_cases_for_suite(&conn, &id)?;
@@ -586,7 +624,8 @@ fn get_test_cases_for_suite(conn: &Connection, suite_id: &str) -> Result<Vec<Tes
 
     let mut test_cases = Vec::new();
     for row in rows {
-        let (id, prompt, expected_output, scoring_method, weight, category, difficulty, tags_json) = row.map_err(|err| err.to_string())?;
+        let (id, prompt, expected_output, scoring_method, weight, category, difficulty, tags_json) =
+            row.map_err(|err| err.to_string())?;
         let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
 
         test_cases.push(TestCase {
@@ -631,12 +670,15 @@ fn save_test_suite(app: AppHandle, suite: TestSuite) -> Result<(), String> {
     ).map_err(|err| err.to_string())?;
 
     // Delete existing test cases and re-insert (simpler than diffing)
-    conn.execute("DELETE FROM test_cases WHERE test_suite_id = ?", params![suite.id])
-        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "DELETE FROM test_cases WHERE test_suite_id = ?",
+        params![suite.id],
+    )
+    .map_err(|err| err.to_string())?;
 
     for (idx, test_case) in suite.test_cases.iter().enumerate() {
-        let tags_json = serde_json::to_string(&test_case.metadata.tags)
-            .unwrap_or_else(|_| "[]".to_string());
+        let tags_json =
+            serde_json::to_string(&test_case.metadata.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
             "INSERT INTO test_cases (id, test_suite_id, prompt, expected_output, scoring_method, weight, category, difficulty, tags, sort_order)
@@ -676,7 +718,7 @@ fn get_all_runs(app: AppHandle) -> Result<Vec<RunResult>, String> {
     let conn = open_db(&app)?;
 
     let mut stmt = conn
-        .prepare("SELECT id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary FROM runs ORDER BY started_at DESC")
+        .prepare("SELECT id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary FROM runs ORDER BY started_at DESC")
         .map_err(|err| err.to_string())?;
 
     let run_rows = stmt
@@ -685,25 +727,41 @@ fn get_all_runs(app: AppHandle) -> Result<Vec<RunResult>, String> {
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, i64>(6)?,
-                row.get::<_, Option<i64>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<i64>>(9)?,
-                row.get::<_, Option<String>>(10)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, Option<i64>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<i64>>(10)?,
+                row.get::<_, Option<String>>(11)?,
             ))
         })
         .map_err(|err| err.to_string())?;
 
     let mut runs = Vec::new();
     for row in run_rows {
-        let (id, test_suite_id, test_suite_name, models_json, params_json, status, started_at, completed_at, judge_model, error_count, error_summary) = row.map_err(|err| err.to_string())?;
+        let (
+            id,
+            test_suite_id,
+            test_suite_name,
+            test_suite_snapshot_json,
+            models_json,
+            params_json,
+            status,
+            started_at,
+            completed_at,
+            judge_model,
+            error_count,
+            error_summary,
+        ) = row.map_err(|err| err.to_string())?;
 
         let models: Vec<String> = serde_json::from_str(&models_json).unwrap_or_default();
-        let parameters: ModelParameters = serde_json::from_str(&params_json)
-            .unwrap_or(ModelParameters {
+        let test_suite_snapshot: Option<TestSuiteSnapshot> =
+            test_suite_snapshot_json.and_then(|snapshot| serde_json::from_str(&snapshot).ok());
+        let parameters: ModelParameters =
+            serde_json::from_str(&params_json).unwrap_or(ModelParameters {
                 temperature: 0.7,
                 top_p: 1.0,
                 max_tokens: 1024,
@@ -718,6 +776,7 @@ fn get_all_runs(app: AppHandle) -> Result<Vec<RunResult>, String> {
             id,
             test_suite_id,
             test_suite_name,
+            test_suite_snapshot,
             models,
             parameters,
             results,
@@ -759,10 +818,22 @@ fn get_results_for_run(conn: &Connection, run_id: &str) -> Result<Vec<TestCaseRe
 
     let mut results = Vec::new();
     for row in rows {
-        let (test_case_id, model_id, response, token_count, prompt_tokens, completion_tokens, cost, latency_ms, status, error, score_json, streamed_content) = row.map_err(|err| err.to_string())?;
+        let (
+            test_case_id,
+            model_id,
+            response,
+            token_count,
+            prompt_tokens,
+            completion_tokens,
+            cost,
+            latency_ms,
+            status,
+            error,
+            score_json,
+            streamed_content,
+        ) = row.map_err(|err| err.to_string())?;
 
-        let score: Option<ScoringResult> = score_json
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let score: Option<ScoringResult> = score_json.and_then(|s| serde_json::from_str(&s).ok());
 
         results.push(TestCaseResult {
             test_case_id,
@@ -787,17 +858,20 @@ fn get_results_for_run(conn: &Connection, run_id: &str) -> Result<Vec<TestCaseRe
 fn save_run(app: AppHandle, run: RunResult) -> Result<(), String> {
     let conn = open_db(&app)?;
 
-    let models_json = serde_json::to_string(&run.models)
-        .unwrap_or_else(|_| "[]".to_string());
-    let params_json = serde_json::to_string(&run.parameters)
-        .unwrap_or_else(|_| "{}".to_string());
+    let models_json = serde_json::to_string(&run.models).unwrap_or_else(|_| "[]".to_string());
+    let params_json = serde_json::to_string(&run.parameters).unwrap_or_else(|_| "{}".to_string());
+    let test_suite_snapshot_json = run
+        .test_suite_snapshot
+        .as_ref()
+        .map(|snapshot| serde_json::to_string(snapshot).unwrap_or_else(|_| "null".to_string()));
 
     conn.execute(
-        "INSERT INTO runs (id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO runs (id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            test_suite_id = excluded.test_suite_id,
            test_suite_name = excluded.test_suite_name,
+           test_suite_snapshot = excluded.test_suite_snapshot,
            models = excluded.models,
            parameters = excluded.parameters,
            status = excluded.status,
@@ -810,6 +884,7 @@ fn save_run(app: AppHandle, run: RunResult) -> Result<(), String> {
             run.id,
             run.test_suite_id,
             run.test_suite_name,
+            test_suite_snapshot_json,
             models_json,
             params_json,
             run.status,
@@ -822,11 +897,16 @@ fn save_run(app: AppHandle, run: RunResult) -> Result<(), String> {
     ).map_err(|err| err.to_string())?;
 
     // Delete existing results and re-insert
-    conn.execute("DELETE FROM test_case_results WHERE run_id = ?", params![run.id])
-        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "DELETE FROM test_case_results WHERE run_id = ?",
+        params![run.id],
+    )
+    .map_err(|err| err.to_string())?;
 
     for result in &run.results {
-        let score_json = result.score.as_ref()
+        let score_json = result
+            .score
+            .as_ref()
             .map(|s| serde_json::to_string(s).unwrap_or_else(|_| "null".to_string()));
 
         conn.execute(
@@ -986,7 +1066,9 @@ fn read_snapshot(app: AppHandle) -> Result<Option<BenchmakerDb>, String> {
 #[tauri::command]
 fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> {
     let conn = open_db(&app)?;
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
 
     // Write test suites
     for suite in &snapshot.test_suites {
@@ -1010,8 +1092,11 @@ fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> 
             ],
         ).map_err(|err| err.to_string())?;
 
-        tx.execute("DELETE FROM test_cases WHERE test_suite_id = ?", params![suite.id])
-            .map_err(|err| err.to_string())?;
+        tx.execute(
+            "DELETE FROM test_cases WHERE test_suite_id = ?",
+            params![suite.id],
+        )
+        .map_err(|err| err.to_string())?;
 
         for (idx, test_case) in suite.test_cases.iter().enumerate() {
             let tags_json = serde_json::to_string(&test_case.metadata.tags)
@@ -1041,23 +1126,32 @@ fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> 
     if !suite_ids.is_empty() {
         let placeholders: String = suite_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!("DELETE FROM test_suites WHERE id NOT IN ({})", placeholders);
-        let params: Vec<&dyn rusqlite::ToSql> = suite_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-        tx.execute(&query, params.as_slice()).map_err(|err| err.to_string())?;
+        let params: Vec<&dyn rusqlite::ToSql> = suite_ids
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        tx.execute(&query, params.as_slice())
+            .map_err(|err| err.to_string())?;
     } else {
-        tx.execute("DELETE FROM test_suites", []).map_err(|err| err.to_string())?;
+        tx.execute("DELETE FROM test_suites", [])
+            .map_err(|err| err.to_string())?;
     }
 
     // Write runs
     for run in &snapshot.runs {
-        let models_json = serde_json::to_string(&run.models)
-            .unwrap_or_else(|_| "[]".to_string());
-        let params_json = serde_json::to_string(&run.parameters)
-            .unwrap_or_else(|_| "{}".to_string());
+        let models_json = serde_json::to_string(&run.models).unwrap_or_else(|_| "[]".to_string());
+        let params_json =
+            serde_json::to_string(&run.parameters).unwrap_or_else(|_| "{}".to_string());
+        let test_suite_snapshot_json = run
+            .test_suite_snapshot
+            .as_ref()
+            .map(|snapshot| serde_json::to_string(snapshot).unwrap_or_else(|_| "null".to_string()));
 
         tx.execute(
-            "INSERT INTO runs (id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO runs (id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
+               test_suite_snapshot = excluded.test_suite_snapshot,
                status = excluded.status,
                completed_at = excluded.completed_at,
                error_count = excluded.error_count,
@@ -1066,6 +1160,7 @@ fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> 
                 run.id,
                 run.test_suite_id,
                 run.test_suite_name,
+                test_suite_snapshot_json,
                 models_json,
                 params_json,
                 run.status,
@@ -1077,11 +1172,16 @@ fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> 
             ],
         ).map_err(|err| err.to_string())?;
 
-        tx.execute("DELETE FROM test_case_results WHERE run_id = ?", params![run.id])
-            .map_err(|err| err.to_string())?;
+        tx.execute(
+            "DELETE FROM test_case_results WHERE run_id = ?",
+            params![run.id],
+        )
+        .map_err(|err| err.to_string())?;
 
         for result in &run.results {
-            let score_json = result.score.as_ref()
+            let score_json = result
+                .score
+                .as_ref()
                 .map(|s| serde_json::to_string(s).unwrap_or_else(|_| "null".to_string()));
 
             tx.execute(
@@ -1111,10 +1211,13 @@ fn write_snapshot(app: AppHandle, snapshot: BenchmakerDb) -> Result<(), String> 
     if !run_ids.is_empty() {
         let placeholders: String = run_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!("DELETE FROM runs WHERE id NOT IN ({})", placeholders);
-        let params: Vec<&dyn rusqlite::ToSql> = run_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-        tx.execute(&query, params.as_slice()).map_err(|err| err.to_string())?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            run_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        tx.execute(&query, params.as_slice())
+            .map_err(|err| err.to_string())?;
     } else {
-        tx.execute("DELETE FROM runs", []).map_err(|err| err.to_string())?;
+        tx.execute("DELETE FROM runs", [])
+            .map_err(|err| err.to_string())?;
     }
 
     write_code_arena_runs(&tx, &snapshot.code_arena_runs)?;
@@ -1154,7 +1257,8 @@ fn get_all_test_suites_internal(conn: &Connection) -> Result<Vec<TestSuite>, Str
 
     let mut suites = Vec::new();
     for row in suite_rows {
-        let (id, name, description, system_prompt, judge_system_prompt, created_at, updated_at) = row.map_err(|err| err.to_string())?;
+        let (id, name, description, system_prompt, judge_system_prompt, created_at, updated_at) =
+            row.map_err(|err| err.to_string())?;
         let test_cases = get_test_cases_for_suite(conn, &id)?;
 
         suites.push(TestSuite {
@@ -1174,7 +1278,7 @@ fn get_all_test_suites_internal(conn: &Connection) -> Result<Vec<TestSuite>, Str
 
 fn get_all_runs_internal(conn: &Connection) -> Result<Vec<RunResult>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary FROM runs ORDER BY started_at DESC")
+        .prepare("SELECT id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary FROM runs ORDER BY started_at DESC")
         .map_err(|err| err.to_string())?;
 
     let run_rows = stmt
@@ -1183,25 +1287,41 @@ fn get_all_runs_internal(conn: &Connection) -> Result<Vec<RunResult>, String> {
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, i64>(6)?,
-                row.get::<_, Option<i64>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<i64>>(9)?,
-                row.get::<_, Option<String>>(10)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, Option<i64>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<i64>>(10)?,
+                row.get::<_, Option<String>>(11)?,
             ))
         })
         .map_err(|err| err.to_string())?;
 
     let mut runs = Vec::new();
     for row in run_rows {
-        let (id, test_suite_id, test_suite_name, models_json, params_json, status, started_at, completed_at, judge_model, error_count, error_summary) = row.map_err(|err| err.to_string())?;
+        let (
+            id,
+            test_suite_id,
+            test_suite_name,
+            test_suite_snapshot_json,
+            models_json,
+            params_json,
+            status,
+            started_at,
+            completed_at,
+            judge_model,
+            error_count,
+            error_summary,
+        ) = row.map_err(|err| err.to_string())?;
 
         let models: Vec<String> = serde_json::from_str(&models_json).unwrap_or_default();
-        let parameters: ModelParameters = serde_json::from_str(&params_json)
-            .unwrap_or(ModelParameters {
+        let test_suite_snapshot: Option<TestSuiteSnapshot> =
+            test_suite_snapshot_json.and_then(|snapshot| serde_json::from_str(&snapshot).ok());
+        let parameters: ModelParameters =
+            serde_json::from_str(&params_json).unwrap_or(ModelParameters {
                 temperature: 0.7,
                 top_p: 1.0,
                 max_tokens: 1024,
@@ -1216,6 +1336,7 @@ fn get_all_runs_internal(conn: &Connection) -> Result<Vec<RunResult>, String> {
             id,
             test_suite_id,
             test_suite_name,
+            test_suite_snapshot,
             models,
             parameters,
             results,
@@ -1295,7 +1416,10 @@ fn get_stored_api_key() -> Result<Option<String>, String> {
     match openrouter_api_key_entry()?.get_password() {
         Ok(api_key) => Ok(Some(api_key)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(err) => Err(format!("Unable to read API key from OS credential store: {}", err)),
+        Err(err) => Err(format!(
+            "Unable to read API key from OS credential store: {}",
+            err
+        )),
     }
 }
 
@@ -1315,6 +1439,90 @@ fn clear_stored_api_key() -> Result<(), String> {
             err
         )),
     }
+}
+
+// ============================================================================
+// Export Files
+// ============================================================================
+
+fn validate_export_extension(extension: &str) -> Result<&'static str, String> {
+    match extension
+        .trim_start_matches('.')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "html" => Ok("html"),
+        "pdf" => Ok("pdf"),
+        "png" => Ok("png"),
+        _ => Err("Unsupported export extension.".to_string()),
+    }
+}
+
+fn sanitize_export_file_name(file_name: &str, extension: &str) -> String {
+    let base_name = Path::new(file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("benchmaker-export");
+    let sanitized = base_name
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            _ if ch.is_control() => '-',
+            _ => ch,
+        })
+        .collect::<String>()
+        .trim_matches(['.', ' '])
+        .to_string();
+
+    let fallback = if sanitized.is_empty() {
+        "benchmaker-export".to_string()
+    } else {
+        sanitized
+    };
+
+    if fallback
+        .to_ascii_lowercase()
+        .ends_with(&format!(".{}", extension))
+    {
+        fallback
+    } else {
+        format!("{}.{}", fallback, extension)
+    }
+}
+
+#[tauri::command]
+async fn save_export_file(
+    file_name: String,
+    extension: String,
+    bytes: Vec<u8>,
+) -> Result<Option<String>, String> {
+    let extension = validate_export_extension(&extension)?;
+    if bytes.is_empty() {
+        return Err("Export file is empty.".to_string());
+    }
+
+    let label = match extension {
+        "html" => "HTML report",
+        "pdf" => "PDF report",
+        "png" => "PNG image",
+        _ => unreachable!(),
+    };
+    let safe_file_name = sanitize_export_file_name(&file_name, extension);
+
+    let selected_path = tauri::api::dialog::blocking::FileDialogBuilder::new()
+        .set_title("Save Benchmark Export")
+        .add_filter(label, &[extension])
+        .set_file_name(&safe_file_name)
+        .save_file();
+
+    let Some(mut path) = selected_path else {
+        return Ok(None);
+    };
+
+    path.set_extension(extension);
+    fs::write(&path, bytes).map_err(|err| format!("Unable to save export: {}", err))?;
+
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 #[cfg(test)]
@@ -1344,6 +1552,27 @@ mod tests {
             frequency_penalty: 0.0,
             presence_penalty: 0.0,
             benchmark_mode: Some(true),
+        }
+    }
+
+    fn sample_suite_snapshot() -> TestSuiteSnapshot {
+        TestSuiteSnapshot {
+            name: "Suite".to_string(),
+            description: Some("Snapshot description".to_string()),
+            system_prompt: "Answer precisely.".to_string(),
+            judge_system_prompt: Some("Score correctness.".to_string()),
+            test_cases: vec![TestCase {
+                id: "case-1".to_string(),
+                prompt: "What is 2 + 2?".to_string(),
+                expected_output: Some("4".to_string()),
+                scoring_method: "exact-match".to_string(),
+                weight: 1.0,
+                metadata: TestCaseMetadata {
+                    category: Some("math".to_string()),
+                    difficulty: Some("easy".to_string()),
+                    tags: vec!["arithmetic".to_string()],
+                },
+            }],
         }
     }
 
@@ -1382,18 +1611,23 @@ mod tests {
     }
 
     #[test]
-    fn migrate_database_creates_v3_contract() {
+    fn migrate_database_creates_current_contract() {
         let conn = Connection::open_in_memory().expect("in-memory database should open");
 
         migrate_database(&conn).expect("migration should succeed");
 
         let version: i64 = conn
-            .query_row("SELECT version FROM schema_version WHERE id = 1", [], |row| row.get(0))
+            .query_row(
+                "SELECT version FROM schema_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
             .expect("schema version should exist");
 
         assert_eq!(version, CURRENT_SCHEMA_VERSION);
         assert!(has_column(&conn, "runs", "error_count"));
         assert!(has_column(&conn, "runs", "error_summary"));
+        assert!(has_column(&conn, "runs", "test_suite_snapshot"));
         assert!(has_column(&conn, "test_case_results", "prompt_tokens"));
         assert!(has_column(&conn, "test_case_results", "completion_tokens"));
         assert!(has_column(&conn, "test_case_results", "cost"));
@@ -1423,11 +1657,14 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory database should open");
         migrate_database(&conn).expect("migration should succeed");
 
-        let params_json = serde_json::to_string(&sample_parameters()).expect("params should serialize");
+        let params_json =
+            serde_json::to_string(&sample_parameters()).expect("params should serialize");
+        let snapshot_json =
+            serde_json::to_string(&sample_suite_snapshot()).expect("snapshot should serialize");
         conn.execute(
-            "INSERT INTO runs (id, test_suite_id, test_suite_name, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
-             VALUES ('run-1', 'suite-1', 'Suite', '[\"provider/model\"]', ?, 'completed', 100, 200, 'judge/model', 1, 'one failure')",
-            params![params_json],
+            "INSERT INTO runs (id, test_suite_id, test_suite_name, test_suite_snapshot, models, parameters, status, started_at, completed_at, judge_model, error_count, error_summary)
+             VALUES ('run-1', 'suite-1', 'Suite', ?, '[\"provider/model\"]', ?, 'completed', 100, 200, 'judge/model', 1, 'one failure')",
+            params![snapshot_json, params_json],
         )
         .expect("run insert should succeed");
 
@@ -1443,6 +1680,13 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].error_count, Some(1));
         assert_eq!(runs[0].error_summary.as_deref(), Some("one failure"));
+        assert_eq!(
+            runs[0]
+                .test_suite_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.system_prompt.as_str()),
+            Some("Answer precisely.")
+        );
         assert_eq!(runs[0].parameters.benchmark_mode, Some(true));
         assert_eq!(runs[0].results[0].prompt_tokens, Some(10));
         assert_eq!(runs[0].results[0].completion_tokens, Some(20));
@@ -1510,7 +1754,6 @@ mod tests {
         assert!(script.contains(r"C:\Users\O''Brien\AppData\Local\Benchmaker\install.log"));
     }
 
-
     #[test]
     #[ignore]
     fn credential_store_round_trip_preserves_existing_openrouter_key() {
@@ -1548,7 +1791,10 @@ mod tests {
                 .map_err(|err| format!("failed to restore original credential: {}", err)),
             None => match entry.delete_password() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-                Err(err) => Err(format!("failed to restore missing credential state: {}", err)),
+                Err(err) => Err(format!(
+                    "failed to restore missing credential state: {}",
+                    err
+                )),
             },
         };
 
@@ -1724,7 +1970,8 @@ fn validate_install_source_name(file_name: &str) -> Result<(), String> {
 fn canonical_update_source(app: &AppHandle, update_path: &str) -> Result<PathBuf, String> {
     let update_root = update_dir(app)?;
     let canonical_root = fs::canonicalize(&update_root).map_err(|err| err.to_string())?;
-    let canonical_source = fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
+    let canonical_source =
+        fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
 
     if !canonical_source.starts_with(&canonical_root) {
         return Err("Update source must be inside the app update directory.".to_string());
@@ -1743,7 +1990,8 @@ fn canonical_update_source(app: &AppHandle, update_path: &str) -> Result<PathBuf
 fn canonical_update_archive(app: &AppHandle, update_path: &str) -> Result<PathBuf, String> {
     let update_root = update_dir(app)?;
     let canonical_root = fs::canonicalize(&update_root).map_err(|err| err.to_string())?;
-    let canonical_archive = fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
+    let canonical_archive =
+        fs::canonicalize(Path::new(update_path)).map_err(|err| err.to_string())?;
 
     if !canonical_archive.starts_with(&canonical_root) {
         return Err("Update archive must be inside the app update directory.".to_string());
@@ -1770,7 +2018,11 @@ fn get_update_platform() -> &'static str {
 }
 
 #[tauri::command]
-fn write_update_file(app: AppHandle, file_name: String, contents: Vec<u8>) -> Result<String, String> {
+fn write_update_file(
+    app: AppHandle,
+    file_name: String,
+    contents: Vec<u8>,
+) -> Result<String, String> {
     validate_update_archive_name(&file_name)?;
 
     let update_root = update_dir(&app)?;
@@ -1786,7 +2038,6 @@ fn write_update_file(app: AppHandle, file_name: String, contents: Vec<u8>) -> Re
 fn escape_powershell_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
-
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -1923,9 +2174,18 @@ exit 1
             "__REPLACEMENT__",
             &escape_powershell_literal(&replacement.to_string_lossy()),
         )
-        .replace("__TARGET__", &escape_powershell_literal(&target.to_string_lossy()))
-        .replace("__BACKUP__", &escape_powershell_literal(&backup.to_string_lossy()))
-        .replace("__LOG__", &escape_powershell_literal(&log.to_string_lossy()))
+        .replace(
+            "__TARGET__",
+            &escape_powershell_literal(&target.to_string_lossy()),
+        )
+        .replace(
+            "__BACKUP__",
+            &escape_powershell_literal(&backup.to_string_lossy()),
+        )
+        .replace(
+            "__LOG__",
+            &escape_powershell_literal(&log.to_string_lossy()),
+        )
 }
 
 #[cfg(target_os = "macos")]
@@ -1971,9 +2231,9 @@ fn apply_update(app: AppHandle, update_path: String) -> Result<(), String> {
     {
         // Get the .app bundle path (current_exe is inside .app/Contents/MacOS/)
         let app_bundle = current_exe
-            .parent()  // MacOS/
-            .and_then(|p| p.parent())  // Contents/
-            .and_then(|p| p.parent())  // .app bundle
+            .parent() // MacOS/
+            .and_then(|p| p.parent()) // Contents/
+            .and_then(|p| p.parent()) // .app bundle
             .ok_or("Could not determine app bundle path")?;
 
         let script = format!(
@@ -2071,6 +2331,8 @@ fn main() {
             get_stored_api_key,
             save_api_key,
             clear_stored_api_key,
+            // Export files
+            save_export_file,
             // Updater commands
             get_update_platform,
             write_update_file,

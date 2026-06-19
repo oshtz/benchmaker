@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { History, Trash2, Play } from 'lucide-react'
+import { Download, History, Trash2, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -17,10 +17,12 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { ComparisonGrid } from './ComparisonGrid'
 import { ReportSummary } from './ReportSummary'
 import { MultiRunAnalysis } from './MultiRunAnalysis'
+import { ExportResultsDialog } from './ExportResultsDialog'
 
 export function Results() {
   const { runs, currentRunId, setCurrentRun, deleteRun } = useRunStore()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const { testSuites } = useTestSuiteStore()
   const { apiKey } = useSettingsStore()
 
@@ -97,6 +99,16 @@ export function Results() {
             </SelectContent>
           </Select>
 
+          {currentRun && (
+            <Button
+              variant="outline"
+              onClick={() => setExportDialogOpen(true)}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+          )}
+
           {currentRunId && (
             <Button
               variant="ghost"
@@ -151,6 +163,16 @@ export function Results() {
           setDeleteDialogOpen(false)
         }}
       />
+
+      {currentRun && (
+        <ExportResultsDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          run={currentRun}
+          testSuites={testSuites}
+          allRuns={runs}
+        />
+      )}
     </div>
   )
 }

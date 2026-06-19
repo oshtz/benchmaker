@@ -13,10 +13,26 @@ import { useModelStore } from '@/stores/modelStore'
 import { useRunStore } from '@/stores/runStore'
 import { executeRun } from '@/services/execution'
 import { estimateStandardRunCost, formatCost, isOverBudget } from '@/services/costControls'
-import type { TestSuite } from '@/types'
+import type { TestSuite, TestSuiteSnapshot } from '@/types'
 
 interface ExecutionControlsProps {
   testSuite: TestSuite
+}
+
+function snapshotTestSuite(testSuite: TestSuite): TestSuiteSnapshot {
+  return {
+    name: testSuite.name,
+    description: testSuite.description,
+    systemPrompt: testSuite.systemPrompt,
+    judgeSystemPrompt: testSuite.judgeSystemPrompt,
+    testCases: testSuite.testCases.map((testCase) => ({
+      ...testCase,
+      metadata: {
+        ...testCase.metadata,
+        tags: [...testCase.metadata.tags],
+      },
+    })),
+  }
 }
 
 export function ExecutionControls({ testSuite }: ExecutionControlsProps) {
@@ -50,6 +66,7 @@ export function ExecutionControls({ testSuite }: ExecutionControlsProps) {
     const run = createRun({
       testSuiteId: testSuite.id,
       testSuiteName: testSuite.name,
+      testSuiteSnapshot: snapshotTestSuite(testSuite),
       models: selectedModelIds,
       parameters: effectiveParameters,
       results: [],

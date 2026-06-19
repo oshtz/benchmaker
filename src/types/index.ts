@@ -23,6 +23,14 @@ export interface TestSuite {
   updatedAt: number
 }
 
+export interface TestSuiteSnapshot {
+  name: string
+  description?: string
+  systemPrompt: string
+  judgeSystemPrompt?: string
+  testCases: TestCase[]
+}
+
 // Scoring Types
 export type ScoringMethod =
   | 'exact-match'
@@ -121,6 +129,7 @@ export interface RunResult {
   id: string
   testSuiteId: string
   testSuiteName: string
+  testSuiteSnapshot?: TestSuiteSnapshot
   models: string[]
   parameters: ModelParameters
   results: TestCaseResult[]
