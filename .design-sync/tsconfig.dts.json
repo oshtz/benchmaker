@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": false,
+    "skipLibCheck": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "allowImportingTsExtensions": false,
+    "baseUrl": "C:/Users/USER/Documents/DEV/Benchmaker",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "rootDir": "C:/Users/USER/Documents/DEV/Benchmaker/src",
+    "outDir": "C:/Users/USER/Documents/DEV/Benchmaker/dist/types",
+    "types": []
+  },
+  "include": [
+    "C:/Users/USER/Documents/DEV/Benchmaker/src/components/ui/**/*.ts",
+    "C:/Users/USER/Documents/DEV/Benchmaker/src/components/ui/**/*.tsx",
+    "C:/Users/USER/Documents/DEV/Benchmaker/src/lib/**/*.ts"
+  ],
+  "exclude": [
+    "C:/Users/USER/Documents/DEV/Benchmaker/src/components/ui/MonacoEditor.tsx"
+  ]
+}

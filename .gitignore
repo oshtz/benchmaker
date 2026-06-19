@@ -99,3 +99,10 @@ PRD.md
 .claude/
 .agents/
 skills-lock.json
+
+# design-sync (claude.ai/design sync) — build artifacts only.
+# Durable inputs (.design-sync/config.json, NOTES.md, conventions.md, previews/, overrides/) ARE committed.
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/

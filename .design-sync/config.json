@@ -1,0 +1,24 @@
+{
+  "pkg": "benchmaker",
+  "globalName": "BenchmakerUI",
+  "projectId": "89cbb294-35dc-4672-82e2-709c3edfd871",
+  "shape": "package",
+  "srcDir": "src/components/ui",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": ".design-sync/.cache/ds-tailwind.css",
+  "buildCmd": "node .design-sync/prebuild.mjs",
+  "runtimeFontPrefixes": ["JetBrains Mono", "Fira Code"],
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "Dialog": { "cardMode": "single", "viewport": "700x460" },
+    "AlertDialog": { "cardMode": "single", "viewport": "700x460" },
+    "ConfirmDialog": { "cardMode": "single", "viewport": "700x460" },
+    "Select": { "cardMode": "single", "viewport": "420x460" },
+    "DropdownMenu": { "cardMode": "single", "viewport": "440x460" },
+    "Toast": { "cardMode": "single", "viewport": "480x360" },
+    "ResizablePanelGroup": { "cardMode": "single", "viewport": "640x300" }
+  },
+  "libOverrides": {
+    "source-kit.mjs": "wrapper: drop MonacoEditor (monaco-editor is multi-MB + uses Vite ?worker imports esbuild can't resolve) from the synthesized entry"
+  }
+}
