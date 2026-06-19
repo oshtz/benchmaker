@@ -194,86 +194,266 @@ function liquidBar(
   `
 }
 
-function classicLeaderboardRows(document: BenchmarkExportDocument, x: number, y: number, width: number): string {
-  return document.modelRows.slice(0, 3).map((row, index) => {
-    const rowY = y + index * 78
-    const barWidth = Math.max(8, Math.min(width - 260, row.effectiveScore * (width - 260)))
-    return `
-      <g>
-        <rect x="${x}" y="${rowY - 40}" width="${width}" height="58" rx="8" fill="${index === 0 ? '#fff3d2' : '#f3f3f3'}" stroke="${index === 0 ? '#e2b345' : '#dedede'}" />
-        ${text(`#${row.rank}`, x + 24, rowY - 3, { size: 26, weight: 800, fill: index === 0 ? '#9d6a00' : '#666' })}
-        ${text(truncate(row.displayName, 30), x + 92, rowY - 6, { size: 24, weight: 800 })}
-        ${text(formatPercent(row.effectiveScore), x + width - 28, rowY - 6, { size: 26, weight: 900, anchor: 'end', fill: '#0c8a53' })}
-        <rect x="${x + 92}" y="${rowY + 7}" width="${width - 260}" height="8" rx="4" fill="#dedede" />
-        <rect x="${x + 92}" y="${rowY + 7}" width="${barWidth}" height="8" rx="4" fill="url(#scoreGradient)" />
-      </g>
-    `
-  }).join('')
-}
-
-function generateClassicShareImageSvg(document: BenchmarkExportDocument): string {
-  const { width, height } = PRESETS[document.options.imagePreset]
-  const top = document.summary.topModel
-  const padding = width >= 1400 ? 92 : 70
-  const titleY = padding + 24
-  const scoreY = height >= 1200 ? 430 : width >= 1400 ? 330 : 360
-  const leaderboardY = height >= 1200 ? 735 : width >= 1400 ? 560 : 650
-  const leaderWidth = width - padding * 2
-  const statsY = height - padding - 96
-  const statusLine = `${document.summary.testCaseCount} tests / ${document.summary.modelCount} models / ${formatDuration(document.summary.durationMs)}`
-  const costLine = document.summary.totalCost > 0 ? ` / ${formatCost(document.summary.totalCost)}` : ''
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <defs>
-    <linearGradient id="brandGradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#8A64D6" />
-      <stop offset="48%" stop-color="#E8549C" />
-      <stop offset="100%" stop-color="#F28E2B" />
+function socialSvgDefs(document: BenchmarkExportDocument, palette: typeof SOCIAL_PALETTES.dark): string {
+  return `
+    <linearGradient id="socialAccent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${palette.accent}" />
+      <stop offset="100%" stop-color="${palette.accent2}" />
     </linearGradient>
-    <linearGradient id="scoreGradient" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#df4b91" />
-      <stop offset="100%" stop-color="#f18a32" />
+    <linearGradient id="liquidSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${palette.border}" stop-opacity="0.24" />
+      <stop offset="42%" stop-color="${palette.border}" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="${palette.border}" stop-opacity="0" />
     </linearGradient>
-    <filter id="paperNoise">
-      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
+    <linearGradient id="rowSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${palette.border}" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="${palette.border}" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="leaderRowWash" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${palette.accent}" stop-opacity="0.12" />
+      <stop offset="42%" stop-color="${palette.accent2}" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="${palette.accent2}" stop-opacity="0" />
+    </linearGradient>
+    <pattern id="socialGrid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M 42 0 L 0 0 0 42" fill="none" stroke="${palette.border}" stroke-width="1" opacity="${document.options.imageTheme === 'dark' ? 0.055 : 0.12}" />
+    </pattern>
+    <filter id="rowShadow" x="-5%" y="-20%" width="110%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="${document.options.imageTheme === 'dark' ? 0.26 : 0.12}" />
+    </filter>
+    <filter id="barGlow" x="-10%" y="-220%" width="120%" height="540%">
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="${palette.accent}" flood-opacity="0.3" />
+    </filter>
+    <filter id="liquidBlobBlur" x="-40%" y="-240%" width="180%" height="580%">
+      <feGaussianBlur stdDeviation="14" />
+    </filter>
+    <filter id="liquidBarNoise" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="3" seed="17" stitchTiles="stitch" />
       <feColorMatrix type="saturate" values="0" />
       <feComponentTransfer>
-        <feFuncA type="table" tableValues="0 0.08" />
+        <feFuncR type="table" tableValues="1 1" />
+        <feFuncG type="table" tableValues="1 1" />
+        <feFuncB type="table" tableValues="1 1" />
+        <feFuncA type="table" tableValues="0 0.32" />
+      </feComponentTransfer>
+    </filter>
+    <filter id="socialNoise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.74" numOctaves="2" stitchTiles="stitch" />
+      <feColorMatrix type="saturate" values="0" />
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.12" />
       </feComponentTransfer>
     </filter>
     <style>
       text { font-family: 'JetBrains Mono','Fira Code',Consolas,ui-monospace,monospace; text-rendering: geometricPrecision; }
     </style>
+  `
+}
+
+function classicMetricBox(
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  palette: typeof SOCIAL_PALETTES.dark,
+): string {
+  const valueSize = width < 120 ? 15 : 17
+
+  return `
+    <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${palette.panelAlt}" stroke="${palette.border}" stroke-opacity="0.11" />
+    <rect x="${x + 1}" y="${y + 1}" width="${width - 2}" height="${Math.max(1, height * 0.42)}" rx="11" fill="url(#rowSheen)" opacity="0.16" />
+    ${text(label.toUpperCase(), x + 14, y + 21, { size: 10, weight: 900, fill: palette.muted, letterSpacing: 1 })}
+    ${text(truncateToWidth(value, width - 28, valueSize), x + 14, y + height - 15, { size: valueSize, weight: 900, fill: palette.text })}
+  `
+}
+
+function classicHeroPanel(
+  document: BenchmarkExportDocument,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  palette: typeof SOCIAL_PALETTES.dark,
+): string {
+  const top = document.summary.topModel
+  if (!top) return ''
+
+  const metricGap = 12
+  const metricWidth = clamp(width * 0.34, 220, 336)
+  const metricX = x + width - metricWidth - 34
+  const metricBoxWidth = (metricWidth - metricGap) / 2
+  const metricBoxHeight = height >= 380 ? 64 : 54
+  const metricY = y + (height >= 380 ? 86 : 76)
+  const scoreAreaWidth = metricX - x - 64
+  const compactHero = width < 700
+  const scoreSize = compactHero ? 96 : height >= 400 ? 128 : height >= 320 ? 112 : 96
+  const scoreY = y + (compactHero ? 164 : height >= 400 ? 176 : height >= 320 ? 154 : 134)
+  const nameSize = compactHero ? 22 : height >= 380 ? 27 : 23
+  const metaSize = height >= 380 ? 18 : 16
+  const nameY = scoreY + (height >= 400 ? 48 : 42)
+  const metaY = nameY + (height >= 380 ? 38 : 32)
+  const barHeight = height >= 380 ? 18 : 16
+  const barY = y + height - (height >= 380 ? 54 : 44)
+  const barWidth = width - 68
+  const filledWidth = top.effectiveScore === 0 ? 0 : Math.max(8, barWidth * top.effectiveScore)
+  const cost = document.summary.totalCost > 0 ? formatCost(document.summary.totalCost) : 'No cost'
+
+  return `
+    <g filter="url(#rowShadow)">
+      <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="24" fill="${palette.panel}" stroke="url(#socialAccent)" stroke-opacity="0.74" stroke-width="2" />
+      <rect x="${x + 2}" y="${y + 2}" width="${width - 4}" height="${height - 4}" rx="22" fill="url(#leaderRowWash)" opacity="0.34" />
+      <rect x="${x + 1}" y="${y + 1}" width="${width - 2}" height="${Math.max(1, height * 0.32)}" rx="23" fill="url(#rowSheen)" opacity="0.18" />
+      ${text('TOP EFFECTIVE SCORE', x + 34, y + 50, { size: 19, weight: 900, fill: palette.accent2, letterSpacing: 2 })}
+      ${text(formatPercent(top.effectiveScore), x + 34, scoreY, { size: scoreSize, weight: 900, fill: palette.good })}
+      <svg x="${x + 38}" y="${nameY - nameSize}" width="${Math.max(120, scoreAreaWidth)}" height="${nameSize + 12}" overflow="hidden">
+        ${text(truncateToWidth(top.displayName, Math.max(120, scoreAreaWidth), nameSize), 0, nameSize, { size: nameSize, weight: 600, fill: palette.text })}
+      </svg>
+      ${text(`${top.scoredCount}/${top.totalExpected} scored / ${formatDuration(document.summary.durationMs)}`, x + 38, metaY, { size: metaSize, weight: 800, fill: palette.muted })}
+      ${classicMetricBox('Tests', String(document.summary.testCaseCount), metricX, metricY, metricBoxWidth, metricBoxHeight, palette)}
+      ${classicMetricBox('Models', String(document.summary.modelCount), metricX + metricBoxWidth + metricGap, metricY, metricBoxWidth, metricBoxHeight, palette)}
+      ${classicMetricBox('Coverage', formatPercent(document.summary.coverage, 0), metricX, metricY + metricBoxHeight + metricGap, metricBoxWidth, metricBoxHeight, palette)}
+      ${classicMetricBox('Cost', cost, metricX + metricBoxWidth + metricGap, metricY + metricBoxHeight + metricGap, metricBoxWidth, metricBoxHeight, palette)}
+      <rect x="${x + 34}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barHeight / 2}" fill="${palette.track}" />
+      ${liquidBar(`classic-hero-${top.modelId}`, x + 34, barY, filledWidth, barHeight, barHeight / 2, palette, { glow: true, noiseOpacity: 0.14 })}
+    </g>
+  `
+}
+
+function classicLeaderboardRows(
+  document: BenchmarkExportDocument,
+  x: number,
+  y: number,
+  width: number,
+  rowHeight: number,
+  gap: number,
+  limit: number,
+  palette: typeof SOCIAL_PALETTES.dark,
+): string {
+  return document.modelRows.slice(0, limit).map((row, index) => {
+    const rowY = y + index * (rowHeight + gap)
+    const rowFill = index === 0 ? palette.panelAlt : palette.panel
+    const rankSize = rowHeight >= 88 ? 34 : 28
+    const labelFontSize = rowHeight >= 88 ? 21 : 18
+    const subFontSize = rowHeight >= 88 ? 15 : 13
+    const scoreSize = rowHeight >= 88 ? 28 : 24
+    const labelX = x + (rowHeight >= 80 ? 96 : 82)
+    const scoreX = x + width - 24
+    const scoreAreaWidth = rowHeight >= 80 ? 134 : 118
+    const trackHeight = rowHeight >= 82 ? 14 : 12
+    const trackWidth = clamp(width * 0.24, 112, rowHeight >= 80 ? 220 : 190)
+    const trackX = x + width - scoreAreaWidth - trackWidth - 22
+    const trackY = rowY + rowHeight * 0.58
+    const labelWidth = Math.max(100, trackX - labelX - 24)
+    const score = clamp(row.effectiveScore, 0, 1)
+    const barWidth = score === 0 ? 0 : Math.max(6, score * trackWidth)
+
+    return `
+      <g filter="${index === 0 ? 'url(#rowShadow)' : ''}">
+        <rect x="${x}" y="${rowY}" width="${width}" height="${rowHeight}" rx="14" fill="${rowFill}" stroke="${index === 0 ? 'url(#socialAccent)' : palette.border}" stroke-opacity="${index === 0 ? 0.58 : 0.12}" stroke-width="${index === 0 ? 2 : 1}" />
+        ${index === 0 ? `<rect x="${x + 2}" y="${rowY + 2}" width="${width - 4}" height="${rowHeight - 4}" rx="12" fill="url(#leaderRowWash)" opacity="0.28" />` : ''}
+        <rect x="${x + 1}" y="${rowY + 1}" width="${width - 2}" height="${Math.max(1, rowHeight * 0.38)}" rx="13" fill="url(#rowSheen)" opacity="${index === 0 ? 0.2 : 0.12}" />
+        <rect x="${x}" y="${rowY + 14}" width="5" height="${rowHeight - 28}" rx="2.5" fill="${index === 0 ? 'url(#socialAccent)' : palette.border}" opacity="${index === 0 ? 1 : 0.16}" />
+        ${text(String(row.rank).padStart(2, '0'), x + 24, rowY + rowHeight * 0.61, { size: rankSize, weight: 900, fill: index === 0 ? palette.accent : palette.faint })}
+        <svg x="${labelX}" y="${rowY}" width="${labelWidth}" height="${rowHeight}" overflow="hidden">
+          ${text(truncateToWidth(row.displayName, labelWidth, labelFontSize), 0, rowHeight * 0.42, { size: labelFontSize, weight: 600, fill: palette.text })}
+          ${text(`${row.scoredCount}/${row.totalExpected} scored`, 1, rowHeight * 0.71, { size: subFontSize, weight: 800, fill: palette.muted })}
+        </svg>
+        <rect x="${trackX}" y="${trackY}" width="${trackWidth}" height="${trackHeight}" rx="${trackHeight / 2}" fill="${palette.track}" />
+        ${liquidBar(`classic-row-${row.modelId}-${row.rank}`, trackX, trackY, barWidth, trackHeight, trackHeight / 2, palette, { glow: index === 0, noiseOpacity: 0.12, opacity: index === 0 ? 1 : 0.72 })}
+        ${text(formatPercent(row.effectiveScore), scoreX, rowY + rowHeight * 0.61, { size: scoreSize, weight: 900, anchor: 'end', fill: index === 0 ? palette.good : palette.text })}
+      </g>
+    `
+  }).join('')
+}
+
+function classicLeaderboardPanel(
+  document: BenchmarkExportDocument,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  limit: number,
+  palette: typeof SOCIAL_PALETTES.dark,
+): string {
+  const rows = document.modelRows.slice(0, limit)
+  if (rows.length === 0) return ''
+
+  const gap = height >= 720 ? 18 : 14
+  const rowTop = y + 78
+  const rowHeight = clamp((height - 102 - gap * (rows.length - 1)) / rows.length, 56, height >= 780 ? 122 : 94)
+
+  return `
+    <g>
+      <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="22" fill="${palette.panel}" stroke="${palette.border}" stroke-opacity="0.13" />
+      <rect x="${x + 1}" y="${y + 1}" width="${width - 2}" height="${Math.max(1, height * 0.13)}" rx="21" fill="url(#rowSheen)" opacity="0.12" />
+      ${text('RANKED MODELS', x + 28, y + 46, { size: 19, weight: 900, fill: palette.accent2, letterSpacing: 2 })}
+      ${text('EFFECTIVE SCORE', x + width - 28, y + 46, { size: 13, weight: 900, fill: palette.muted, anchor: 'end', letterSpacing: 1 })}
+      ${classicLeaderboardRows(document, x + 18, rowTop, width - 36, rowHeight, gap, limit, palette)}
+    </g>
+  `
+}
+
+function generateClassicShareImageSvg(document: BenchmarkExportDocument): string {
+  const { width, height } = PRESETS[document.options.imagePreset]
+  const palette = SOCIAL_PALETTES[document.options.imageTheme]
+  const padding = width >= 1400 ? 72 : 58
+  const isWide = width > height
+  const isTall = height >= 1700
+  const bodyTop = padding + (isWide ? 202 : 222)
+  const footerRuleY = height - padding - 94
+  const contentBottom = footerRuleY - 28
+  const panelGap = isWide ? 34 : isTall ? 38 : 28
+  const hasResults = document.modelRows.length > 0
+  const content = (() => {
+    if (!hasResults) return socialEmptyState(width, height, padding, palette)
+
+    if (isWide) {
+      const availableWidth = width - padding * 2 - panelGap
+      const heroWidth = Math.round(availableWidth * 0.43)
+      const panelHeight = contentBottom - bodyTop
+      const leaderX = padding + heroWidth + panelGap
+      const leaderWidth = width - leaderX - padding
+
+      return `
+        ${classicHeroPanel(document, padding, bodyTop, heroWidth, panelHeight, palette)}
+        ${classicLeaderboardPanel(document, leaderX, bodyTop, leaderWidth, panelHeight, 4, palette)}
+      `
+    }
+
+    const heroHeight = isTall ? 430 : height >= 1200 ? 340 : 270
+    const leaderY = bodyTop + heroHeight + panelGap
+    const leaderHeight = contentBottom - leaderY
+    const rowLimit = isTall ? 6 : height >= 1200 ? 5 : 3
+
+    return `
+      ${classicHeroPanel(document, padding, bodyTop, width - padding * 2, heroHeight, palette)}
+      ${classicLeaderboardPanel(document, padding, leaderY, width - padding * 2, leaderHeight, rowLimit, palette)}
+    `
+  })()
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    ${socialSvgDefs(document, palette)}
   </defs>
-  <rect width="100%" height="100%" fill="#fbfbfb" />
-  <rect width="100%" height="100%" filter="url(#paperNoise)" opacity="0.75" />
-  <rect x="${padding}" y="${padding}" width="${width - padding * 2}" height="${height - padding * 2}" rx="18" fill="none" stroke="#141414" stroke-width="4" />
-  <rect x="${padding}" y="${padding}" width="${width - padding * 2}" height="10" fill="url(#brandGradient)" />
-
-  ${text('BENCHMAKER', padding + 28, titleY, { size: 26, weight: 900, fill: '#df4b91', letterSpacing: 5 })}
-  ${text('Benchmark Results', padding + 28, titleY + 72, { size: width >= 1400 ? 74 : 64, weight: 900 })}
-  ${text(truncate(document.suite.name, width >= 1400 ? 52 : 34), padding + 32, titleY + 122, { size: 30, weight: 700, fill: '#666' })}
-
-  <g>
-    ${text(top ? formatPercent(top.effectiveScore) : '-', padding + 26, scoreY, { size: width >= 1400 ? 132 : 146, weight: 900, fill: '#0c8a53' })}
-    ${text('top effective score', padding + 36, scoreY + 48, { size: 28, weight: 800, fill: '#666' })}
-    ${text(top ? truncate(top.displayName, width >= 1400 ? 38 : 24) : 'No scored model', padding + 36, scoreY + 98, { size: width >= 1400 ? 46 : 42, weight: 900 })}
-  </g>
-
-  <g>
-    ${classicLeaderboardRows(document, padding + 28, leaderboardY, leaderWidth - 56)}
-  </g>
-
-  <g>
-    <rect x="${padding + 28}" y="${statsY - 38}" width="${leaderWidth - 56}" height="108" rx="8" fill="#141414" />
-    ${text(statusLine, padding + 58, statsY + 3, { size: 28, weight: 800, fill: '#ffffff' })}
-    ${text(`${formatPercent(document.summary.coverage, 0)} scored coverage${costLine}`, padding + 58, statsY + 46, { size: 24, weight: 700, fill: '#f2b94b' })}
-    ${text(`Generated ${formatDateTime(document.generatedAt)}`, width - padding - 58, statsY + 46, { size: 18, weight: 600, fill: '#b8b8b8', anchor: 'end' })}
-  </g>
+  <rect width="100%" height="100%" fill="${palette.bg}" />
+  <rect width="100%" height="100%" fill="url(#socialGrid)" />
+  <rect width="100%" height="100%" filter="url(#socialNoise)" opacity="${document.options.imageTheme === 'dark' ? 0.7 : 0.38}" />
+  <rect x="${padding / 2}" y="${padding / 2}" width="${width - padding}" height="${height - padding}" rx="28" fill="none" stroke="${palette.border}" stroke-opacity="0.18" stroke-width="3" />
+  <rect x="${padding}" y="${padding + 132}" width="${width - padding * 2}" height="7" fill="url(#socialAccent)" />
+  ${socialTitle(document, width, padding, palette, 'RESULT CARD')}
+  ${content}
+  ${socialFooter(document, width, height, padding, palette)}
 </svg>`
 }
 
-function socialTitle(document: BenchmarkExportDocument, width: number, padding: number, palette: typeof SOCIAL_PALETTES.dark): string {
+function socialTitle(
+  document: BenchmarkExportDocument,
+  width: number,
+  padding: number,
+  palette: typeof SOCIAL_PALETTES.dark,
+  rightLabel = 'LLM BENCHMARK',
+): string {
   const titleSize = width >= 1400 ? 58 : 50
   const maxTitleLength = width >= 1400 ? 42 : 27
   const meta = `${document.summary.testCaseCount} tests / ${document.summary.modelCount} models / ${formatDuration(document.summary.durationMs)}`
@@ -282,7 +462,7 @@ function socialTitle(document: BenchmarkExportDocument, width: number, padding: 
   return `
     ${appIconMark(padding, padding, iconSize)}
     ${text('BENCHMAKER', padding + iconSize + 18, padding + 35, { size: 24, weight: 900, fill: palette.accent, letterSpacing: 5 })}
-    ${text('LLM BENCHMARK', width - padding, padding + 35, { size: 21, weight: 800, fill: palette.muted, anchor: 'end', letterSpacing: 2 })}
+    ${text(rightLabel, width - padding, padding + 35, { size: 21, weight: 800, fill: palette.muted, anchor: 'end', letterSpacing: 2 })}
     ${text(truncate(document.suite.name.toUpperCase(), maxTitleLength), padding, padding + 112, { size: titleSize, weight: 900, fill: palette.text })}
     ${text(meta.toUpperCase(), padding, padding + 166, { size: 20, weight: 800, fill: palette.muted, letterSpacing: 1 })}
   `
@@ -586,56 +766,7 @@ function generateSocialCardSvg(document: BenchmarkExportDocument): string {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs>
-    <linearGradient id="socialAccent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="${palette.accent}" />
-      <stop offset="100%" stop-color="${palette.accent2}" />
-    </linearGradient>
-    <linearGradient id="liquidSheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${palette.border}" stop-opacity="0.24" />
-      <stop offset="42%" stop-color="${palette.border}" stop-opacity="0.04" />
-      <stop offset="100%" stop-color="${palette.border}" stop-opacity="0" />
-    </linearGradient>
-    <linearGradient id="rowSheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${palette.border}" stop-opacity="0.18" />
-      <stop offset="100%" stop-color="${palette.border}" stop-opacity="0" />
-    </linearGradient>
-    <linearGradient id="leaderRowWash" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="${palette.accent}" stop-opacity="0.12" />
-      <stop offset="42%" stop-color="${palette.accent2}" stop-opacity="0.06" />
-      <stop offset="100%" stop-color="${palette.accent2}" stop-opacity="0" />
-    </linearGradient>
-    <pattern id="socialGrid" width="42" height="42" patternUnits="userSpaceOnUse">
-      <path d="M 42 0 L 0 0 0 42" fill="none" stroke="${palette.border}" stroke-width="1" opacity="${document.options.imageTheme === 'dark' ? 0.055 : 0.12}" />
-    </pattern>
-    <filter id="rowShadow" x="-5%" y="-20%" width="110%" height="150%">
-      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="${document.options.imageTheme === 'dark' ? 0.26 : 0.12}" />
-    </filter>
-    <filter id="barGlow" x="-10%" y="-220%" width="120%" height="540%">
-      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="${palette.accent}" flood-opacity="0.3" />
-    </filter>
-    <filter id="liquidBlobBlur" x="-40%" y="-240%" width="180%" height="580%">
-      <feGaussianBlur stdDeviation="14" />
-    </filter>
-    <filter id="liquidBarNoise" x="0" y="0" width="100%" height="100%">
-      <feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="3" seed="17" stitchTiles="stitch" />
-      <feColorMatrix type="saturate" values="0" />
-      <feComponentTransfer>
-        <feFuncR type="table" tableValues="1 1" />
-        <feFuncG type="table" tableValues="1 1" />
-        <feFuncB type="table" tableValues="1 1" />
-        <feFuncA type="table" tableValues="0 0.32" />
-      </feComponentTransfer>
-    </filter>
-    <filter id="socialNoise">
-      <feTurbulence type="fractalNoise" baseFrequency="0.74" numOctaves="2" stitchTiles="stitch" />
-      <feColorMatrix type="saturate" values="0" />
-      <feComponentTransfer>
-        <feFuncA type="table" tableValues="0 0.12" />
-      </feComponentTransfer>
-    </filter>
-    <style>
-      text { font-family: 'JetBrains Mono','Fira Code',Consolas,ui-monospace,monospace; text-rendering: geometricPrecision; }
-    </style>
+    ${socialSvgDefs(document, palette)}
   </defs>
   <rect width="100%" height="100%" fill="${palette.bg}" />
   <rect width="100%" height="100%" fill="url(#socialGrid)" />

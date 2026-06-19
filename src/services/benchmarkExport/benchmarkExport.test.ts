@@ -3,6 +3,7 @@ import {
   buildBenchmarkExportDocument,
   generateScientificHtml,
   generateShareImageSvg,
+  getShareImageSize,
 } from '.'
 import type { BenchmarkExportOptions } from './types'
 import type { RunResult, TestSuite } from '@/types'
@@ -173,6 +174,46 @@ describe('benchmark export document', () => {
     expect(svg).toContain('Model 1')
     expect(svg).not.toContain('What is 2 + 2?')
     expect(svg).not.toContain('provider/model-a')
+  })
+
+  it('uses the branded social design system for classic result cards', () => {
+    const document = buildBenchmarkExportDocument({
+      run,
+      testSuites: [suite],
+      allRuns: [run],
+      options: { ...options, mode: 'share-image', imageTemplate: 'classic' },
+      generatedAt: 10_000,
+    })
+
+    const svg = generateShareImageSvg(document)
+
+    expect(svg).toContain('RESULT CARD')
+    expect(svg).toContain('TOP EFFECTIVE SCORE')
+    expect(svg).toContain('RANKED MODELS')
+    expect(svg).toContain('url(#socialGrid)')
+    expect(svg).toContain('liquidGradient')
+    expect(svg).not.toContain('brandGradient')
+    expect(svg).not.toContain('paperNoise')
+    expect(svg).not.toContain('#fbfbfb')
+  })
+
+  it('renders classic result cards for every image size preset', () => {
+    const presets = ['square', 'portrait', 'story', 'wide'] as const
+
+    presets.forEach((imagePreset) => {
+      const document = buildBenchmarkExportDocument({
+        run,
+        testSuites: [suite],
+        allRuns: [run],
+        options: { ...options, mode: 'share-image', imageTemplate: 'classic', imagePreset },
+        generatedAt: 10_000,
+      })
+      const { width, height } = getShareImageSize(imagePreset)
+      const svg = generateShareImageSvg(document)
+
+      expect(svg).toContain(`width="${width}" height="${height}"`)
+      expect(svg).not.toMatch(/NaN|Infinity|undefined/)
+    })
   })
 
   it('generates reference-style social cards', () => {
