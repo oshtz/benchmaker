@@ -8,7 +8,7 @@ export interface ExportArtifact {
 }
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 async function blobToBytes(blob: Blob): Promise<number[]> {
@@ -17,7 +17,7 @@ async function blobToBytes(blob: Blob): Promise<number[]> {
 }
 
 async function invokeNativeSave(artifact: ExportArtifact): Promise<string | null> {
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   const bytes = await blobToBytes(artifact.blob)
   return invoke<string | null>('save_export_file', {
     fileName: artifact.filename,

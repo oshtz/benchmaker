@@ -1,12 +1,12 @@
 import { Minus, Square, X } from 'lucide-react'
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && ('__TAURI_IPC__' in window || '__TAURI__' in window)
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 async function getAppWindow() {
-  const { appWindow } = await import('@tauri-apps/api/window')
-  return appWindow
+  const { getCurrentWindow } = await import('@tauri-apps/api/window')
+  return getCurrentWindow()
 }
 
 export function TitleBar() {

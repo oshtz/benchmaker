@@ -109,3 +109,6 @@ skills-lock.json
 ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
+
+# Tauri v2 generated ACL schemas (regenerated on every build)
+src-tauri/gen/schemas/

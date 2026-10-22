@@ -6,15 +6,21 @@ authors = ["you"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "dialog-save", "http-request", "process-command-api", "window-minimize", "window-start-dragging", "window-close", "window-maximize", "window-unmaximize"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-http = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 keyring = "2.3.3"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+
+[dev-dependencies]
+# Only used by the ignored OpenRouter smoke test.
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

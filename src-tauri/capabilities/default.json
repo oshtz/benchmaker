@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimum webview permissions for the main window, mapped from the Tauri v1 allowlist. Dialogs and the FFmpeg sidecar are driven from Rust only, so no dialog or shell permissions are exposed to the frontend.",
+  "windows": ["main"],
+  "permissions": [
+    "core:app:allow-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.github.com/*" },
+        { "url": "https://github.com/oshtz/benchmaker/releases/*" },
+        { "url": "https://objects.githubusercontent.com/*" }
+      ]
+    }
+  ]
+}

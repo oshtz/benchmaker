@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::api::process::{Command as TauriCommand, CommandChild, CommandEvent};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -199,9 +201,9 @@ pub struct BenchmakerDb {
 
 fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
     Ok(data_dir.join("benchmaker.sqlite"))
 }
@@ -1516,8 +1518,31 @@ fn sanitize_export_file_name(file_name: &str, extension: &str) -> String {
     }
 }
 
+/// Shows a native save dialog from Rust (v1: `tauri::api::dialog::blocking::FileDialogBuilder`).
+/// Must not be called from the main thread; callers are async commands.
+fn blocking_save_dialog(
+    app: &AppHandle,
+    title: &str,
+    filter_label: &str,
+    extension: &str,
+    file_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    app.dialog()
+        .file()
+        .set_title(title)
+        .add_filter(filter_label, &[extension])
+        .set_file_name(file_name)
+        .blocking_save_file()
+        .map(|path| {
+            path.into_path()
+                .map_err(|err| format!("Unsupported save location: {}", err))
+        })
+        .transpose()
+}
+
 #[tauri::command]
 async fn save_export_file(
+    app: AppHandle,
     file_name: String,
     extension: String,
     bytes: Vec<u8>,
@@ -1537,11 +1562,13 @@ async fn save_export_file(
     };
     let safe_file_name = sanitize_export_file_name(&file_name, extension);
 
-    let selected_path = tauri::api::dialog::blocking::FileDialogBuilder::new()
-        .set_title("Save Benchmark Export")
-        .add_filter(label, &[extension])
-        .set_file_name(&safe_file_name)
-        .save_file();
+    let selected_path = blocking_save_dialog(
+        &app,
+        "Save Benchmark Export",
+        label,
+        extension,
+        &safe_file_name,
+    )?;
 
     let Some(mut path) = selected_path else {
         return Ok(None);
@@ -1567,9 +1594,9 @@ fn save_code_arena_artifact(
         return Err("Artifact is empty.".to_string());
     }
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     let safe_run = sanitize_export_file_name(&run_id, "run")
         .trim_end_matches(".run")
         .to_string();
@@ -1704,7 +1731,7 @@ fn emit_code_arena_export_progress(
     progress: f64,
     message: &str,
 ) {
-    let _ = app.emit_all(
+    let _ = app.emit(
         "code-arena-export-progress",
         CodeArenaExportProgress {
             job_id: job_id.to_string(),
@@ -1747,9 +1774,9 @@ fn stage_ffmpeg_executable(temp_dir: &Path) -> Result<PathBuf, String> {
 #[tauri::command]
 fn read_code_arena_artifact(app: AppHandle, path: String) -> Result<Vec<u8>, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     let artifact_root = data_dir.join("code-arena-artifacts");
     let resolved_root = fs::canonicalize(&artifact_root)
         .map_err(|_| "Code Arena artifact storage is unavailable.".to_string())?;
@@ -1804,9 +1831,9 @@ async fn export_code_arena_video(
         .remove(&job_id);
 
     let cache_dir = app
-        .path_resolver()
+        .path()
         .app_cache_dir()
-        .ok_or_else(|| "Unable to resolve app cache directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app cache directory.".to_string())?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|err| err.to_string())?
@@ -1893,9 +1920,11 @@ async fn export_code_arena_video_inner(
     ];
 
     let ffmpeg_path = stage_ffmpeg_executable(temp_dir)?;
-    let (mut receiver, child) = TauriCommand::new(ffmpeg_path.to_string_lossy().to_string())
+    let (mut receiver, child) = app
+        .shell()
+        .command(&ffmpeg_path)
         .args(args)
-        .current_dir(temp_dir.to_path_buf())
+        .current_dir(temp_dir)
         .spawn()
         .map_err(|err| format!("Unable to start bundled FFmpeg: {}", err))?;
     jobs.children
@@ -1915,7 +1944,10 @@ async fn export_code_arena_video_inner(
     let mut encoded_frame_count = 0_u64;
     while let Some(event) = receiver.recv().await {
         match event {
-            CommandEvent::Stdout(line) => {
+            CommandEvent::Stdout(bytes) => {
+                // v2 delivers raw bytes including the line terminator; v1 delivered trimmed strings.
+                let line = String::from_utf8_lossy(&bytes);
+                let line = line.trim_end();
                 if let Some(value) = line
                     .strip_prefix("frame=")
                     .and_then(|value| value.trim().parse::<u64>().ok())
@@ -1937,9 +1969,11 @@ async fn export_code_arena_video_inner(
                     );
                 }
             }
-            CommandEvent::Stderr(line) => {
+            CommandEvent::Stderr(bytes) => {
+                let line = String::from_utf8_lossy(&bytes);
+                let line = line.trim_end();
                 if !line.trim().is_empty() {
-                    last_error = line;
+                    last_error = line.to_string();
                 }
             }
             CommandEvent::Error(error) => last_error = error,
@@ -1975,11 +2009,13 @@ async fn export_code_arena_video_inner(
         "Choose where to save the reel",
     );
     let safe_file_name = sanitize_export_file_name(&request.file_name, "mp4");
-    let selected_path = tauri::api::dialog::blocking::FileDialogBuilder::new()
-        .set_title("Save Code Arena Reel")
-        .add_filter("MP4 video", &["mp4"])
-        .set_file_name(&safe_file_name)
-        .save_file();
+    let selected_path = blocking_save_dialog(
+        app,
+        "Save Code Arena Reel",
+        "MP4 video",
+        "mp4",
+        &safe_file_name,
+    )?;
     let Some(mut path) = selected_path else {
         emit_code_arena_export_progress(app, &request.job_id, "cancelled", 0.0, "Save cancelled");
         return Ok(None);
@@ -2455,9 +2491,9 @@ const UPDATE_DIR_NAME: &str = "benchmaker-updates";
 
 fn update_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_local_data_dir()
-        .ok_or("Could not resolve app local data directory")?;
+        .map_err(|_| "Could not resolve app local data directory")?;
     Ok(data_dir.join(UPDATE_DIR_NAME))
 }
 
@@ -2850,6 +2886,9 @@ fn extract_app_zip(_zip_path: String) -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(CodeArenaExportJobs::default())
         .invoke_handler(tauri::generate_handler![
             // Legacy commands (backwards compatible)

@@ -26,7 +26,7 @@ interface UpdateState {
 }
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 async function readCurrentVersion(): Promise<string | null> {

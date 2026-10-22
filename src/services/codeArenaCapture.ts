@@ -30,8 +30,8 @@ export async function captureCodeArenaOutput(runId: string, modelId: string, cod
   const dataUrl = canvas.toDataURL('image/png')
   captureCache.set(`${runId}:${modelId}:${viewport}`, dataUrl)
   let path: string | undefined
-  if ('__TAURI__' in window) {
-    const { invoke } = await import('@tauri-apps/api/tauri')
+  if ('__TAURI_INTERNALS__' in window) {
+    const { invoke } = await import('@tauri-apps/api/core')
     const binary = atob(dataUrl.split(',')[1] ?? '')
     const bytes = Array.from(binary, (character) => character.charCodeAt(0))
     path = await invoke<string>('save_code_arena_artifact', { runId, fileName: `${safeName(modelId)}-${viewport}.png`, bytes })

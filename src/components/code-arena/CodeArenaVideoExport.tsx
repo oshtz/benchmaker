@@ -28,7 +28,7 @@ export function CodeArenaVideoExport({ run }: { run: CodeArenaRun }) {
   const abortRef = useRef<AbortController | null>(null)
   const { updateRun } = useCodeArenaRunStore()
   const { toast } = useToast()
-  const desktopRuntime = typeof window !== 'undefined' && '__TAURI__' in window
+  const desktopRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
   const candidates = useMemo(
     () => run.outputs.filter((output) => output.status === 'completed' && (output.captures?.length ?? 0) >= 2),
     [run.outputs],

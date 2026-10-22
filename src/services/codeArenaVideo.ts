@@ -65,7 +65,7 @@ export function buildCodeArenaVideoTimeline(run: CodeArenaRun, modelIds: string[
 
 export async function cancelCodeArenaVideoExport(jobId: string): Promise<void> {
   if (!isTauriRuntime()) return
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   await invoke('cancel_code_arena_export', { jobId })
 }
 
@@ -98,7 +98,7 @@ export async function exportCodeArenaVideo({
   }
   throwIfCancelled(signal)
 
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   const { listen } = await import('@tauri-apps/api/event')
   const unlisten = await listen<CodeArenaVideoProgress>('code-arena-export-progress', (event) => {
     if (event.payload.jobId === jobId) onProgress?.(event.payload)
@@ -148,7 +148,7 @@ function codeArenaVideoFileName(run: CodeArenaRun): string {
 }
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 async function loadSelectedCaptures(
@@ -170,7 +170,7 @@ async function captureDataUrl(run: CodeArenaRun, modelId: string, viewport: Code
   const cached = capture?.dataUrl ?? getCachedCapture(run.id, modelId, viewport)
   if (cached) return cached
   if (!capture?.path) throw new Error(`${viewport} capture is unavailable for ${modelId}.`)
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   const bytes = await invoke<number[]>('read_code_arena_artifact', { path: capture.path })
   return URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'image/png' }))
 }
