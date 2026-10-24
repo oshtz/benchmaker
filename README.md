@@ -1,6 +1,6 @@
 # Benchmaker
 
-Benchmaker is a desktop app for comparing LLMs under the same prompts, parameters, and scoring rules. It runs on React, TypeScript, and Tauri 1.x, with OpenRouter as the model API.
+Benchmaker is a desktop app for comparing LLMs under the same prompts, parameters, and scoring rules. It runs on React, TypeScript, and Tauri 2, with OpenRouter as the model API.
 
 ## What It Does
 
@@ -18,7 +18,7 @@ Benchmaker is a desktop app for comparing LLMs under the same prompts, parameter
 - React 19, TypeScript, Vite 7
 - Tailwind CSS 4, Radix UI, Lucide icons, Monaco Editor
 - Zustand state stores
-- Tauri 1.x Rust backend
+- Tauri 2 Rust backend
 - SQLite via `rusqlite`
 - OpenRouter API
 
@@ -103,6 +103,7 @@ src/
   types/             Shared TypeScript types
 src-tauri/
   src/main.rs        Tauri commands, SQLite schema, updater helpers
+  capabilities/      Tauri 2 webview permissions (least privilege)
 tests/e2e/           Playwright smoke tests
 .github/workflows/   Build and quality workflows
 ```
@@ -112,4 +113,3 @@ tests/e2e/           Playwright smoke tests
 - Add richer export/reporting formats.
 - Add deeper browser-level Code Arena verification.
 - Reduce frontend bundle size with route/component chunking.
-- Consider a Tauri 2 migration once the updater and plugin model are worth the migration cost.

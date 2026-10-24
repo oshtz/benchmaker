@@ -36,14 +36,14 @@ export function getAssetConfigForPlatform(os: string): AssetConfig {
 }
 
 async function getAssetConfig(): Promise<AssetConfig> {
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   const os = await invoke<string>('get_update_platform')
 
   return getAssetConfigForPlatform(os)
 }
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 export function normalizeVersion(version: string): string {
@@ -66,13 +66,12 @@ export function compareVersions(left: string, right: string): number {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const { fetch, ResponseType } = await import('@tauri-apps/api/http')
+  const { fetch } = await import('@tauri-apps/plugin-http')
 
   let response
   try {
-    response = await fetch<T>(url, {
+    response = await fetch(url, {
       method: 'GET',
-      responseType: ResponseType.JSON,
       headers: {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'Benchmaker',
@@ -90,17 +89,16 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`GitHub API request failed (${response.status})`)
   }
 
-  return response.data
+  return (await response.json()) as T
 }
 
 async function downloadBinary(url: string): Promise<Uint8Array> {
-  const { fetch, ResponseType } = await import('@tauri-apps/api/http')
+  const { fetch } = await import('@tauri-apps/plugin-http')
 
   let response
   try {
-    response = await fetch<Uint8Array>(url, {
+    response = await fetch(url, {
       method: 'GET',
-      responseType: ResponseType.Binary,
       headers: {
         Accept: 'application/octet-stream',
         'User-Agent': 'Benchmaker',
@@ -115,19 +113,16 @@ async function downloadBinary(url: string): Promise<Uint8Array> {
     throw new Error(`Update download failed (${response.status})`)
   }
 
-  return response.data instanceof Uint8Array
-    ? response.data
-    : new Uint8Array(response.data as unknown as number[])
+  return new Uint8Array(await response.arrayBuffer())
 }
 
 async function fetchText(url: string): Promise<string> {
-  const { fetch, ResponseType } = await import('@tauri-apps/api/http')
+  const { fetch } = await import('@tauri-apps/plugin-http')
 
   let response
   try {
-    response = await fetch<string>(url, {
+    response = await fetch(url, {
       method: 'GET',
-      responseType: ResponseType.Text,
       headers: {
         Accept: 'application/octet-stream',
         'User-Agent': 'Benchmaker',
@@ -142,7 +137,7 @@ async function fetchText(url: string): Promise<string> {
     throw new Error(`Checksum download failed (${response.status})`)
   }
 
-  return response.data
+  return response.text()
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -277,7 +272,7 @@ export async function downloadUpdate(update: UpdateInfo): Promise<string> {
     throw new Error('Updates require the Tauri runtime.')
   }
 
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
 
   return downloadUpdateWithServices(update, {
     downloadBinary,
@@ -297,6 +292,6 @@ export async function installUpdate(updatePath: string): Promise<void> {
     throw new Error('Updates require the Tauri runtime.')
   }
 
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   await invoke('apply_update', { updatePath })
 }

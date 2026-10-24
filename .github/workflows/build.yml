@@ -43,7 +43,7 @@ jobs:
           Write-Host "Release version contract: v$version"
 
       - name: Build Tauri app
-        run: npm run tauri:build -- --bundles none
+        run: npm run tauri:build -- --no-bundle
 
       - name: Cache Enigma Virtual Box installer
         uses: actions/cache@v5

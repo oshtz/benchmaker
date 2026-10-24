@@ -58,10 +58,10 @@ function checkVersionSync() {
   const cargo = readText('src-tauri/Cargo.toml')
   const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]
 
-  if (pkg.version === tauri.package?.version && pkg.version === cargoVersion) {
+  if (pkg.version === tauri.version && pkg.version === cargoVersion) {
     pass(`Version sync: ${pkg.version}`)
   } else {
-    fail(`Version mismatch: package=${pkg.version}, tauri=${tauri.package?.version}, cargo=${cargoVersion}`)
+    fail(`Version mismatch: package=${pkg.version}, tauri=${tauri.version}, cargo=${cargoVersion}`)
   }
 
   return pkg.version
@@ -99,7 +99,7 @@ function checkPackageScripts() {
   }
 
   const tauri = readJson('src-tauri/tauri.conf.json')
-  if (tauri.tauri?.bundle?.externalBin?.includes('binaries/ffmpeg')) {
+  if (tauri.bundle?.externalBin?.includes('binaries/ffmpeg')) {
     pass('Tauri bundle includes the FFmpeg sidecar')
   } else {
     fail('Tauri bundle is missing the FFmpeg sidecar')

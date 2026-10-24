@@ -29,14 +29,14 @@ export interface SnapshotChangeSet {
 }
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauriRuntime()) {
     throw new Error('SQLite database requires Tauri runtime. Please run the desktop app.')
   }
-  const { invoke } = await import('@tauri-apps/api/tauri')
+  const { invoke } = await import('@tauri-apps/api/core')
   return invoke<T>(command, args)
 }
 

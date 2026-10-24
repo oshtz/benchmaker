@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::api::process::{Command as TauriCommand, CommandChild, CommandEvent};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -199,9 +201,9 @@ pub struct BenchmakerDb {
 
 fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
     Ok(data_dir.join("benchmaker.sqlite"))
 }
@@ -1516,8 +1518,31 @@ fn sanitize_export_file_name(file_name: &str, extension: &str) -> String {
     }
 }
 
+/// Shows a native save dialog from Rust (v1: `tauri::api::dialog::blocking::FileDialogBuilder`).
+/// Must not be called from the main thread; callers are async commands.
+fn blocking_save_dialog(
+    app: &AppHandle,
+    title: &str,
+    filter_label: &str,
+    extension: &str,
+    file_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    app.dialog()
+        .file()
+        .set_title(title)
+        .add_filter(filter_label, &[extension])
+        .set_file_name(file_name)
+        .blocking_save_file()
+        .map(|path| {
+            path.into_path()
+                .map_err(|err| format!("Unsupported save location: {}", err))
+        })
+        .transpose()
+}
+
 #[tauri::command]
 async fn save_export_file(
+    app: AppHandle,
     file_name: String,
     extension: String,
     bytes: Vec<u8>,
@@ -1537,11 +1562,13 @@ async fn save_export_file(
     };
     let safe_file_name = sanitize_export_file_name(&file_name, extension);
 
-    let selected_path = tauri::api::dialog::blocking::FileDialogBuilder::new()
-        .set_title("Save Benchmark Export")
-        .add_filter(label, &[extension])
-        .set_file_name(&safe_file_name)
-        .save_file();
+    let selected_path = blocking_save_dialog(
+        &app,
+        "Save Benchmark Export",
+        label,
+        extension,
+        &safe_file_name,
+    )?;
 
     let Some(mut path) = selected_path else {
         return Ok(None);
@@ -1567,9 +1594,9 @@ fn save_code_arena_artifact(
         return Err("Artifact is empty.".to_string());
     }
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     let safe_run = sanitize_export_file_name(&run_id, "run")
         .trim_end_matches(".run")
         .to_string();
@@ -1633,7 +1660,12 @@ struct CodeArenaExportJobs {
 }
 
 fn validated_job_id(value: &str) -> Result<String, String> {
-    if value.is_empty() || value.len() > 100 || !value.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
+    if value.is_empty()
+        || value.len() > 100
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+    {
         return Err("Invalid export job ID.".to_string());
     }
     Ok(value.to_string())
@@ -1666,7 +1698,9 @@ fn validate_video_request(request: &CodeArenaVideoExportRequest) -> Result<u64, 
         return Err("Unsupported Code Arena reel dimensions.".to_string());
     }
     if request.frames.len() < 3 || request.frames.len() > 6 {
-        return Err("A reel must contain an intro, one to four model cards, and an outro.".to_string());
+        return Err(
+            "A reel must contain an intro, one to four model cards, and an outro.".to_string(),
+        );
     }
 
     let mut duration_ms = 0_u64;
@@ -1678,7 +1712,9 @@ fn validate_video_request(request: &CodeArenaVideoExportRequest) -> Result<u64, 
             return Err("A reel frame exceeds the 25 MB limit.".to_string());
         }
         if png_dimensions(&frame.png_bytes) != Some((request.width, request.height)) {
-            return Err("Every reel frame must be a PNG matching the selected aspect preset.".to_string());
+            return Err(
+                "Every reel frame must be a PNG matching the selected aspect preset.".to_string(),
+            );
         }
         duration_ms = duration_ms.saturating_add(frame.duration_ms);
     }
@@ -1688,8 +1724,14 @@ fn validate_video_request(request: &CodeArenaVideoExportRequest) -> Result<u64, 
     Ok(duration_ms)
 }
 
-fn emit_code_arena_export_progress(app: &AppHandle, job_id: &str, phase: &str, progress: f64, message: &str) {
-    let _ = app.emit_all(
+fn emit_code_arena_export_progress(
+    app: &AppHandle,
+    job_id: &str,
+    phase: &str,
+    progress: f64,
+    message: &str,
+) {
+    let _ = app.emit(
         "code-arena-export-progress",
         CodeArenaExportProgress {
             job_id: job_id.to_string(),
@@ -1718,11 +1760,13 @@ fn stage_ffmpeg_executable(temp_dir: &Path) -> Result<PathBuf, String> {
     let destination = temp_dir.join("ffmpeg.exe");
     #[cfg(not(target_os = "windows"))]
     let destination = temp_dir.join("ffmpeg");
-    fs::copy(&source, &destination).map_err(|err| format!("Unable to stage bundled FFmpeg: {}", err))?;
+    fs::copy(&source, &destination)
+        .map_err(|err| format!("Unable to stage bundled FFmpeg: {}", err))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&destination, fs::Permissions::from_mode(0o755)).map_err(|err| err.to_string())?;
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o755))
+            .map_err(|err| err.to_string())?;
     }
     Ok(destination)
 }
@@ -1730,9 +1774,9 @@ fn stage_ffmpeg_executable(temp_dir: &Path) -> Result<PathBuf, String> {
 #[tauri::command]
 fn read_code_arena_artifact(app: AppHandle, path: String) -> Result<Vec<u8>, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_data_dir()
-        .ok_or_else(|| "Unable to resolve app data directory.".to_string())?;
+        .map_err(|_| "Unable to resolve app data directory.".to_string())?;
     let artifact_root = data_dir.join("code-arena-artifacts");
     let resolved_root = fs::canonicalize(&artifact_root)
         .map_err(|_| "Code Arena artifact storage is unavailable.".to_string())?;
@@ -1755,9 +1799,19 @@ fn cancel_code_arena_export(
     jobs: State<'_, CodeArenaExportJobs>,
 ) -> Result<(), String> {
     let job_id = validated_job_id(&job_id)?;
-    jobs.cancelled.lock().map_err(|_| "Export cancellation state is unavailable.".to_string())?.insert(job_id.clone());
-    if let Some(child) = jobs.children.lock().map_err(|_| "Export process state is unavailable.".to_string())?.remove(&job_id) {
-        child.kill().map_err(|err| format!("Unable to cancel FFmpeg: {}", err))?;
+    jobs.cancelled
+        .lock()
+        .map_err(|_| "Export cancellation state is unavailable.".to_string())?
+        .insert(job_id.clone());
+    if let Some(child) = jobs
+        .children
+        .lock()
+        .map_err(|_| "Export process state is unavailable.".to_string())?
+        .remove(&job_id)
+    {
+        child
+            .kill()
+            .map_err(|err| format!("Unable to cancel FFmpeg: {}", err))?;
     }
     emit_code_arena_export_progress(&app, &job_id, "cancelled", 0.0, "Export cancelled");
     Ok(())
@@ -1771,19 +1825,34 @@ async fn export_code_arena_video(
 ) -> Result<Option<CodeArenaVideoArtifact>, String> {
     let duration_ms = validate_video_request(&request)?;
     let job_id = request.job_id.clone();
-    jobs.cancelled.lock().map_err(|_| "Export cancellation state is unavailable.".to_string())?.remove(&job_id);
+    jobs.cancelled
+        .lock()
+        .map_err(|_| "Export cancellation state is unavailable.".to_string())?
+        .remove(&job_id);
 
     let cache_dir = app
-        .path_resolver()
+        .path()
         .app_cache_dir()
-        .ok_or_else(|| "Unable to resolve app cache directory.".to_string())?;
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|err| err.to_string())?.as_millis();
-    let temp_dir = cache_dir.join("code-arena-video").join(format!("{}-{}", job_id, nonce));
-    fs::create_dir_all(&temp_dir).map_err(|err| format!("Unable to create export workspace: {}", err))?;
+        .map_err(|_| "Unable to resolve app cache directory.".to_string())?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| err.to_string())?
+        .as_millis();
+    let temp_dir = cache_dir
+        .join("code-arena-video")
+        .join(format!("{}-{}", job_id, nonce));
+    fs::create_dir_all(&temp_dir)
+        .map_err(|err| format!("Unable to create export workspace: {}", err))?;
 
     let result = export_code_arena_video_inner(&app, &jobs, &request, &temp_dir, duration_ms).await;
-    jobs.children.lock().map_err(|_| "Export process state is unavailable.".to_string())?.remove(&job_id);
-    jobs.cancelled.lock().map_err(|_| "Export cancellation state is unavailable.".to_string())?.remove(&job_id);
+    jobs.children
+        .lock()
+        .map_err(|_| "Export process state is unavailable.".to_string())?
+        .remove(&job_id);
+    jobs.cancelled
+        .lock()
+        .map_err(|_| "Export cancellation state is unavailable.".to_string())?
+        .remove(&job_id);
     fs::remove_dir_all(&temp_dir).ok();
     result
 }
@@ -1795,13 +1864,23 @@ async fn export_code_arena_video_inner(
     temp_dir: &Path,
     duration_ms: u64,
 ) -> Result<Option<CodeArenaVideoArtifact>, String> {
-    emit_code_arena_export_progress(app, &request.job_id, "preparing", 0.02, "Preparing reel frames");
+    emit_code_arena_export_progress(
+        app,
+        &request.job_id,
+        "preparing",
+        0.02,
+        "Preparing reel frames",
+    );
     let mut concat = String::new();
     for (index, frame) in request.frames.iter().enumerate() {
         let frame_name = format!("frame-{:02}.png", index);
         fs::write(temp_dir.join(&frame_name), &frame.png_bytes)
             .map_err(|err| format!("Unable to stage reel frame: {}", err))?;
-        concat.push_str(&format!("file '{}'\nduration {:.3}\n", frame_name, frame.duration_ms as f64 / 1000.0));
+        concat.push_str(&format!(
+            "file '{}'\nduration {:.3}\n",
+            frame_name,
+            frame.duration_ms as f64 / 1000.0
+        ));
     }
     let final_name = format!("frame-{:02}.png", request.frames.len() - 1);
     concat.push_str(&format!("file '{}'\n", final_name));
@@ -1809,51 +1888,92 @@ async fn export_code_arena_video_inner(
         .map_err(|err| format!("Unable to stage reel timeline: {}", err))?;
 
     let output_path = temp_dir.join("reel.mp4");
-    let video_filter = format!("fps={},scale={}:{},format=yuv420p", request.fps, request.width, request.height);
+    let video_filter = format!(
+        "fps={},scale={}:{},format=yuv420p",
+        request.fps, request.width, request.height
+    );
     let args = vec![
         "-y".to_string(),
-        "-f".to_string(), "concat".to_string(),
-        "-safe".to_string(), "0".to_string(),
-        "-i".to_string(), temp_dir.join("timeline.txt").to_string_lossy().to_string(),
-        "-vf".to_string(), video_filter,
-        "-c:v".to_string(), "libx264".to_string(),
-        "-preset".to_string(), "medium".to_string(),
-        "-crf".to_string(), "18".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
+        "-f".to_string(),
+        "concat".to_string(),
+        "-safe".to_string(),
+        "0".to_string(),
+        "-i".to_string(),
+        temp_dir.join("timeline.txt").to_string_lossy().to_string(),
+        "-vf".to_string(),
+        video_filter,
+        "-c:v".to_string(),
+        "libx264".to_string(),
+        "-preset".to_string(),
+        "medium".to_string(),
+        "-crf".to_string(),
+        "18".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
         "-an".to_string(),
-        "-progress".to_string(), "pipe:1".to_string(),
+        "-progress".to_string(),
+        "pipe:1".to_string(),
         "-nostats".to_string(),
         output_path.to_string_lossy().to_string(),
     ];
 
     let ffmpeg_path = stage_ffmpeg_executable(temp_dir)?;
-    let (mut receiver, child) = TauriCommand::new(ffmpeg_path.to_string_lossy().to_string())
+    let (mut receiver, child) = app
+        .shell()
+        .command(&ffmpeg_path)
         .args(args)
-        .current_dir(temp_dir.to_path_buf())
+        .current_dir(temp_dir)
         .spawn()
         .map_err(|err| format!("Unable to start bundled FFmpeg: {}", err))?;
-    jobs.children.lock().map_err(|_| "Export process state is unavailable.".to_string())?.insert(request.job_id.clone(), child);
-    emit_code_arena_export_progress(app, &request.job_id, "encoding", 0.05, "Encoding H.264 video");
+    jobs.children
+        .lock()
+        .map_err(|_| "Export process state is unavailable.".to_string())?
+        .insert(request.job_id.clone(), child);
+    emit_code_arena_export_progress(
+        app,
+        &request.job_id,
+        "encoding",
+        0.05,
+        "Encoding H.264 video",
+    );
 
     let mut exit_code = None;
     let mut last_error = String::new();
     let mut encoded_frame_count = 0_u64;
     while let Some(event) = receiver.recv().await {
         match event {
-            CommandEvent::Stdout(line) => {
-                if let Some(value) = line.strip_prefix("frame=").and_then(|value| value.trim().parse::<u64>().ok()) {
+            CommandEvent::Stdout(bytes) => {
+                // v2 delivers raw bytes including the line terminator; v1 delivered trimmed strings.
+                let line = String::from_utf8_lossy(&bytes);
+                let line = line.trim_end();
+                if let Some(value) = line
+                    .strip_prefix("frame=")
+                    .and_then(|value| value.trim().parse::<u64>().ok())
+                {
                     encoded_frame_count = value;
                 }
-                if let Some(value) = line.strip_prefix("out_time_ms=").and_then(|value| value.trim().parse::<u64>().ok()) {
+                if let Some(value) = line
+                    .strip_prefix("out_time_ms=")
+                    .and_then(|value| value.trim().parse::<u64>().ok())
+                {
                     let encoded_ms = value / 1000;
                     let progress = (encoded_ms as f64 / duration_ms.max(1) as f64).clamp(0.0, 0.98);
-                    emit_code_arena_export_progress(app, &request.job_id, "encoding", progress, "Encoding H.264 video");
+                    emit_code_arena_export_progress(
+                        app,
+                        &request.job_id,
+                        "encoding",
+                        progress,
+                        "Encoding H.264 video",
+                    );
                 }
             }
-            CommandEvent::Stderr(line) => {
+            CommandEvent::Stderr(bytes) => {
+                let line = String::from_utf8_lossy(&bytes);
+                let line = line.trim_end();
                 if !line.trim().is_empty() {
-                    last_error = line;
+                    last_error = line.to_string();
                 }
             }
             CommandEvent::Error(error) => last_error = error,
@@ -1865,30 +1985,51 @@ async fn export_code_arena_video_inner(
         }
     }
 
-    let cancelled = jobs.cancelled.lock().map_err(|_| "Export cancellation state is unavailable.".to_string())?.contains(&request.job_id);
+    let cancelled = jobs
+        .cancelled
+        .lock()
+        .map_err(|_| "Export cancellation state is unavailable.".to_string())?
+        .contains(&request.job_id);
     if cancelled {
         return Err("Code Arena video export was cancelled.".to_string());
     }
     if exit_code != Some(0) || !output_path.is_file() {
-        return Err(if last_error.is_empty() { "FFmpeg did not produce a video.".to_string() } else { format!("FFmpeg export failed: {}", last_error) });
+        return Err(if last_error.is_empty() {
+            "FFmpeg did not produce a video.".to_string()
+        } else {
+            format!("FFmpeg export failed: {}", last_error)
+        });
     }
 
-    emit_code_arena_export_progress(app, &request.job_id, "saving", 0.99, "Choose where to save the reel");
+    emit_code_arena_export_progress(
+        app,
+        &request.job_id,
+        "saving",
+        0.99,
+        "Choose where to save the reel",
+    );
     let safe_file_name = sanitize_export_file_name(&request.file_name, "mp4");
-    let selected_path = tauri::api::dialog::blocking::FileDialogBuilder::new()
-        .set_title("Save Code Arena Reel")
-        .add_filter("MP4 video", &["mp4"])
-        .set_file_name(&safe_file_name)
-        .save_file();
+    let selected_path = blocking_save_dialog(
+        app,
+        "Save Code Arena Reel",
+        "MP4 video",
+        "mp4",
+        &safe_file_name,
+    )?;
     let Some(mut path) = selected_path else {
         emit_code_arena_export_progress(app, &request.job_id, "cancelled", 0.0, "Save cancelled");
         return Ok(None);
     };
     path.set_extension("mp4");
     let partial_path = path.with_extension("mp4.partial");
-    if partial_path.exists() { fs::remove_file(&partial_path).map_err(|err| err.to_string())?; }
+    if partial_path.exists() {
+        fs::remove_file(&partial_path).map_err(|err| err.to_string())?;
+    }
     fs::copy(&output_path, &partial_path).map_err(|err| format!("Unable to save reel: {}", err))?;
-    if path.exists() { fs::remove_file(&path).map_err(|err| format!("Unable to replace existing reel: {}", err))?; }
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|err| format!("Unable to replace existing reel: {}", err))?;
+    }
     fs::rename(&partial_path, &path).map_err(|err| format!("Unable to finalize reel: {}", err))?;
     emit_code_arena_export_progress(app, &request.job_id, "completed", 1.0, "Reel exported");
 
@@ -1934,7 +2075,8 @@ mod tests {
     }
 
     fn png_header(width: u32, height: u32) -> Vec<u8> {
-        let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x00\x00\x00\x00\x00".to_vec();
+        let mut bytes =
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x00\x00\x00\x00\x00".to_vec();
         bytes[16..20].copy_from_slice(&width.to_be_bytes());
         bytes[20..24].copy_from_slice(&height.to_be_bytes());
         bytes
@@ -1949,9 +2091,18 @@ mod tests {
             height: 900,
             fps: 30,
             frames: vec![
-                CodeArenaVideoFrame { png_bytes: png_header(1600, 900), duration_ms: 1500 },
-                CodeArenaVideoFrame { png_bytes: png_header(1600, 900), duration_ms: 2750 },
-                CodeArenaVideoFrame { png_bytes: png_header(1600, 900), duration_ms: 2500 },
+                CodeArenaVideoFrame {
+                    png_bytes: png_header(1600, 900),
+                    duration_ms: 1500,
+                },
+                CodeArenaVideoFrame {
+                    png_bytes: png_header(1600, 900),
+                    duration_ms: 2750,
+                },
+                CodeArenaVideoFrame {
+                    png_bytes: png_header(1600, 900),
+                    duration_ms: 2500,
+                },
             ],
         }
     }
@@ -2340,9 +2491,9 @@ const UPDATE_DIR_NAME: &str = "benchmaker-updates";
 
 fn update_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
-        .path_resolver()
+        .path()
         .app_local_data_dir()
-        .ok_or("Could not resolve app local data directory")?;
+        .map_err(|_| "Could not resolve app local data directory")?;
     Ok(data_dir.join(UPDATE_DIR_NAME))
 }
 
@@ -2735,6 +2886,9 @@ fn extract_app_zip(_zip_path: String) -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(CodeArenaExportJobs::default())
         .invoke_handler(tauri::generate_handler![
             // Legacy commands (backwards compatible)

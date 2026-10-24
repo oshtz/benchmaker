@@ -9,8 +9,8 @@ export function codeArenaFileName(run: CodeArenaRun, suffix: string, extension: 
 }
 
 async function saveBytes(fileName: string, extension: string, bytes: Uint8Array): Promise<string | null> {
-  if (typeof window !== 'undefined' && '__TAURI__' in window) {
-    const { invoke } = await import('@tauri-apps/api/tauri')
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { invoke } = await import('@tauri-apps/api/core')
     return invoke<string | null>('save_export_file', { fileName, extension, bytes: Array.from(bytes) })
   }
   const blob = new Blob([bytes as BlobPart])
