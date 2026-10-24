@@ -24,7 +24,7 @@ Benchmaker is a desktop app for comparing LLMs under the same prompts, parameter
 
 ## Requirements
 
-- Node.js 20 is recommended
+- Node.js 22.23.4 is recommended
 - Rust stable
 - npm
 - OpenRouter API key
